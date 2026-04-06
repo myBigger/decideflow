@@ -27,8 +27,9 @@ export async function login(formData: FormData) {
     return { error: '邮箱或密码错误' }
   }
 
-  // Server Action redirects are the most reliable way
-  redirect('/dashboard')
+  // 返回成功标识，由客户端执行跳转
+  // （Server Action 的 redirect 在 Vercel Serverless 中可能导致 cookie 未被正确设置）
+  return { success: true }
 }
 
 // ──────────────────────────────────────────────
@@ -64,7 +65,8 @@ export async function register(formData: FormData) {
     return { error: error.message || '注册失败，请稍后重试' }
   }
 
-  return { success: true, message: '注册成功！请查收验证邮件，然后登录' }
+  // 注册成功后直接跳转到登录页，并带上 registered=1 让登录页显示友好提示
+  redirect('/auth/login?registered=1')
 }
 
 // ──────────────────────────────────────────────

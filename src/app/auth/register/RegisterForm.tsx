@@ -76,11 +76,7 @@ export default function RegisterForm() {
       if (result && 'error' in result) {
         setError((result.error as string | undefined) ?? null)
       } else if (result && 'success' in result) {
-        setSuccess(((result as unknown) as { success: boolean; message?: string }).message ?? '注册成功！')
-        // Redirect to login after short delay
-        setTimeout(() => {
-          router.push('/auth/login?registered=true')
-        }, 1500)
+        // Server Action 会 redirect，这里实际上不会走到
       }
     })
   }

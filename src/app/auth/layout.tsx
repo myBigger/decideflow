@@ -1,7 +1,10 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: '登录 / 注册 — DecideFlow',
+  title: {
+    default: '登录 / 注册',
+    template: '%s | DecideFlow',
+  },
   description: '登录或注册 DecideFlow 账号，开始高效团队决策',
 }
 

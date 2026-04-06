@@ -1,17 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   ArrowLeft, Clock, Users, Calendar, CheckCircle2, XCircle,
-  MessageSquare, Plus, AlertTriangle, TrendingUp, ChevronRight,
-  Lock, Shield, BarChart2, Sparkles
+  MessageSquare, Plus, AlertTriangle, ChevronRight,
+  Lock, Shield, BarChart2, Sparkles, RefreshCw
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { zhCN } from 'date-fns/locale/zh-CN'
 import clsx from 'clsx'
-import type { Decision, VoteType } from '@/types/database'
+import type { Decision } from '@/types/database'
 import { VOTE_RULES } from '@/lib/vote-engine'
+import { decisionsAPI, type DecisionDetailResponse } from '@/lib/api/decisions'
 import AIInsightCard from '@/components/AIInsightCard'
+import { SkeletonDetail } from '@/components/ui'
 
 interface DecisionDetailProps {
   decision: Decision
@@ -19,44 +21,119 @@ interface DecisionDetailProps {
   onVote: (decisionId: string, optionId: string) => void
 }
 
-const MOCK_OPTIONS = [
-  { id: 'opt-1', content: 'AI 写作助手', description: '集成 LLM，提供智能写作、摘要、润色功能', order_index: 0 },
-  { id: 'opt-2', content: '数据仪表盘', description: '可视化核心业务指标，支持自定义看板', order_index: 1 },
-  { id: 'opt-3', content: '移动端优化', description: '重设计移动端体验，提升 App Store 评分', order_index: 2 },
-  { id: 'opt-4', content: 'API 开放平台', description: '对第三方开发者开放 API，构建生态', order_index: 3 },
-]
-
-const MOCK_MEMBERS = [
-  { id: 'u1', name: '张明', avatar: null, weight: 3 },
-  { id: 'u2', name: '李华', avatar: null, weight: 2 },
-  { id: 'u3', name: '王芳', avatar: null, weight: 2 },
-  { id: 'u4', name: '陈强', avatar: null, weight: 1 },
-  { id: 'u5', name: '刘洋', avatar: null, weight: 1 },
-  { id: 'u6', name: '赵雪', avatar: null, weight: 1 },
-]
-
 export default function DecisionDetail({ decision, onBack, onVote }: DecisionDetailProps) {
+  const [data, setData] = useState<DecisionDetailResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [voted, setVoted] = useState(false)
   const [showComment, setShowComment] = useState(false)
   const [comment, setComment] = useState('')
+  const [voting, setVoting] = useState(false)
+  const [voteMsg, setVoteMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const voteRule = VOTE_RULES[decision.vote_type]
   const isVoting = decision.status === 'voting'
   const isEnded = ['passed', 'rejected'].includes(decision.status)
 
-  const handleVote = () => {
+  // 真实数据优先级：API > props
+  const options = data?.options ?? []
+  const voteResults = data?.vote_results ?? []
+  const members = data?.members ?? []
+  const executions = data?.executions ?? []
+  const comments = data?.comments ?? []
+  const currentUserVote = data?.current_user_vote ?? null
+  const hasVoted = currentUserVote !== null || voted
+  const totalVoters = members.length
+  const votedCount = data?.votes?.length ?? 0
+
+  // 发起 API 请求获取完整数据
+  const fetchDetail = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await decisionsAPI.getById(decision.id)
+      setData(res)
+      if (res.current_user_vote) {
+        setVoted(true)
+        setSelectedOption(res.current_user_vote.option_id)
+        if (res.current_user_vote.comment) {
+          setComment(res.current_user_vote.comment)
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || '加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [decision.id])
+
+  useEffect(() => {
+    fetchDetail()
+  }, [fetchDetail])
+
+  // 投票
+  const handleVote = async () => {
     if (!selectedOption) return
-    onVote(decision.id, selectedOption)
-    setVoted(true)
+    setVoting(true)
+    setVoteMsg(null)
+    try {
+      const result = await decisionsAPI.vote(decision.id, selectedOption, comment || undefined)
+      setVoted(true)
+      onVote(decision.id, selectedOption)
+      setVoteMsg({ type: 'success', text: result.message })
+      // 刷新数据
+      await fetchDetail()
+    } catch (err: any) {
+      setVoteMsg({ type: 'error', text: err.message || '投票失败' })
+    } finally {
+      setVoting(false)
+    }
   }
 
-  // Mock vote stats
-  const voteStats = {
-    opt1: decision.vote_type === 'weighted' ? { score: 5, pct: 62.5 } : { score: 4, pct: 50 },
-    opt2: decision.vote_type === 'weighted' ? { score: 2, pct: 25 } : { score: 2, pct: 25 },
-    opt3: decision.vote_type === 'weighted' ? { score: 1, pct: 12.5 } : { score: 1, pct: 12.5 },
-    opt4: decision.vote_type === 'weighted' ? { score: 0, pct: 0 } : { score: 1, pct: 12.5 },
+  // 计算每个选项的投票结果
+  const getOptionResult = (optionId: string) => {
+    return voteResults.find(r => r.option_id === optionId)
+  }
+
+  // 判断胜出/失败
+  const isWinner = (optionId: string) => {
+    if (!isEnded) return false
+    const result = getOptionResult(optionId)
+    if (!result) return false
+    const maxScore = Math.max(...voteResults.map(r => r.score))
+    return result.score === maxScore && result.score > 0
+  }
+
+  if (loading) {
+    return (
+      <div className="animate-fade-in max-w-4xl">
+        <button onClick={onBack} className="btn btn-ghost mb-4 -ml-2 text-slate-500">
+          <ArrowLeft size={16} />
+          返回列表
+        </button>
+        <SkeletonDetail />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="animate-fade-in max-w-4xl">
+        <button onClick={onBack} className="btn btn-ghost mb-4 -ml-2 text-slate-500">
+          <ArrowLeft size={16} />
+          返回列表
+        </button>
+        <div className="card p-8 text-center">
+          <AlertTriangle size={32} className="text-red-400 mx-auto mb-3" />
+          <p className="text-sm text-red-500 mb-4">{error}</p>
+          <button onClick={fetchDetail} className="btn btn-secondary text-sm">
+            <RefreshCw size={14} />
+            重试
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -85,22 +162,34 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
           <p className="text-sm text-slate-500 mb-5 leading-relaxed">{decision.description}</p>
         )}
 
-        {/* Meta Info */}
+        {/* Meta Info — 真实数据 */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl">
-          <MetaItem icon={<Users size={14} />} label="参与成员" value="8人" />
+          <MetaItem
+            icon={<Users size={14} />}
+            label="参与成员"
+            value={isVoting || isEnded ? `${votedCount}/${totalVoters}人` : `${totalVoters}人`}
+          />
           <MetaItem
             icon={<Clock size={14} />}
             label={isVoting ? '剩余时间' : '持续时长'}
             value={
               isVoting && decision.voting_end
                 ? formatDistanceToNow(new Date(decision.voting_end), { addSuffix: true, locale: zhCN })
-                : isEnded
-                ? '3天'
-                : '未开始'
+                : isEnded && decision.voting_end
+                ? format(new Date(decision.voting_end), 'MM/dd HH:mm')
+                : isEnded ? '已结束' : '未开始'
             }
           />
-          <MetaItem icon={<BarChart2 size={14} />} label="投票规则" value={`${decision.pass_threshold}%通过`} />
-          <MetaItem icon={<Calendar size={14} />} label="发起时间" value={format(new Date(decision.created_at), 'MM/dd HH:mm')} />
+          <MetaItem
+            icon={<BarChart2 size={14} />}
+            label="投票规则"
+            value={`${decision.pass_threshold}%通过`}
+          />
+          <MetaItem
+            icon={<Calendar size={14} />}
+            label="发起时间"
+            value={format(new Date(decision.created_at), 'MM/dd HH:mm')}
+          />
         </div>
 
         {/* AI Insight Banner */}
@@ -128,41 +217,39 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
       <div className="space-y-3 mb-4">
         <h3 className="section-title flex items-center gap-2">
           投票选项
-          {isVoting && !voted && <span className="text-xs font-normal text-slate-400">（请选择一项）</span>}
-          {voted && <span className="badge badge-success text-xs">已投票</span>}
+          {isVoting && !hasVoted && <span className="text-xs font-normal text-slate-400">（请选择一项）</span>}
+          {hasVoted && <span className="badge badge-success text-xs">已投票</span>}
         </h3>
 
-        {MOCK_OPTIONS.map((option, idx) => {
-          const stats = [voteStats.opt1, voteStats.opt2, voteStats.opt3, voteStats.opt4][idx]
+        {options.map((option) => {
+          const result = getOptionResult(option.id)
           const isSelected = selectedOption === option.id
-          const isWinner = isEnded && idx === 0 && decision.status === 'passed'
-          const isLoser = isEnded && idx === 0 && decision.status === 'rejected'
+          const winner = isWinner(option.id)
+          const loser = isEnded && !winner && (result?.score ?? 0) < (Math.max(...voteResults.map(r => r.score)) || 0)
 
           return (
             <div
               key={option.id}
-              onClick={() => !voted && isVoting && setSelectedOption(option.id)}
+              onClick={() => !hasVoted && isVoting && setSelectedOption(option.id)}
               className={clsx(
-                'card p-4 cursor-pointer transition-all duration-200 relative overflow-hidden',
-                isVoting && !voted && !isSelected && 'hover:border-primary-200 hover:shadow-md',
-                isSelected && !voted && isVoting && 'border-primary-400 shadow-md shadow-primary-100 ring-2 ring-primary-200',
-                voted && isVoting && isSelected && 'border-primary-400 bg-primary-50/50',
-                isEnded && isWinner && 'border-green-300 bg-green-50/50',
-                isEnded && isLoser && 'border-red-200 opacity-60',
+                'card p-4 transition-all duration-200 relative overflow-hidden',
+                !hasVoted && isVoting && 'cursor-pointer hover:border-primary-200 hover:shadow-md',
+                isSelected && !hasVoted && isVoting && 'border-primary-400 shadow-md shadow-primary-100 ring-2 ring-primary-200',
+                hasVoted && isVoting && isSelected && 'border-primary-400 bg-primary-50/50',
+                winner && 'border-green-300 bg-green-50/50',
+                loser && 'border-red-200 opacity-60',
                 !isVoting && !isEnded && 'cursor-default'
               )}
             >
-              {/* Selected indicator */}
-              {isSelected && !voted && isVoting && (
+              {isSelected && !hasVoted && isVoting && (
                 <div className="absolute inset-0 bg-primary-500/5 rounded-2xl" />
               )}
 
               <div className="flex items-start gap-3">
-                {/* Radio/Check indicator */}
+                {/* Radio indicator */}
                 <div className={clsx(
                   'w-5 h-5 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center transition-all',
                   isSelected ? 'border-primary-500 bg-primary-500' : 'border-slate-300',
-                  !isVoting && 'cursor-default'
                 )}>
                   {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
@@ -175,7 +262,7 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
                     )}>
                       {option.content}
                     </span>
-                    {isWinner && (
+                    {winner && (
                       <span className="badge badge-success text-xs flex items-center gap-1">
                         <CheckCircle2 size={10} /> 胜出
                       </span>
@@ -184,30 +271,30 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
                   <p className="text-xs text-slate-400 mt-0.5">{option.description}</p>
                 </div>
 
-                {/* Vote Stats (shown when voted or ended) */}
-                {(voted || isEnded) && (
+                {/* Vote Stats */}
+                {(hasVoted || isEnded) && result && (
                   <div className="text-right shrink-0">
                     <p className={clsx(
                       'text-sm font-bold',
-                      isWinner ? 'text-green-600' : isLoser ? 'text-red-500' : 'text-slate-600'
+                      winner ? 'text-green-600' : loser ? 'text-red-500' : 'text-slate-600'
                     )}>
-                      {stats.score}票
+                      {result.score}票
                     </p>
-                    <p className="text-xs text-slate-400">{stats.pct}%</p>
+                    <p className="text-xs text-slate-400">{result.percentage.toFixed(1)}%</p>
                   </div>
                 )}
               </div>
 
               {/* Progress bar */}
-              {(voted || isEnded) && (
+              {(hasVoted || isEnded) && result && (
                 <div className="mt-3 ml-8">
                   <div className="progress-bar">
                     <div
                       className={clsx(
                         'progress-fill transition-all duration-700',
-                        isWinner ? 'from-green-400 to-green-600' : isLoser ? 'from-red-400 to-red-500' : 'from-slate-300 to-slate-400'
+                        winner ? 'from-green-400 to-green-600' : loser ? 'from-red-400 to-red-500' : 'from-slate-300 to-slate-400'
                       )}
-                      style={{ width: `${stats.pct}%` }}
+                      style={{ width: `${result.percentage}%` }}
                     />
                   </div>
                 </div>
@@ -218,8 +305,17 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
       </div>
 
       {/* Vote Button */}
-      {isVoting && !voted && (
+      {isVoting && !hasVoted && (
         <div className="card p-4">
+          {voteMsg && (
+            <div className={clsx(
+              'mb-4 p-3 rounded-xl text-sm',
+              voteMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+            )}>
+              {voteMsg.text}
+            </div>
+          )}
+
           <div className="flex items-center gap-3 mb-4">
             <MessageSquare size={16} className="text-slate-400" />
             <span className="text-sm text-slate-600">投票附言（可选）</span>
@@ -242,22 +338,31 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
 
           <button
             onClick={handleVote}
-            disabled={!selectedOption}
+            disabled={!selectedOption || voting}
             className="btn btn-primary btn-lg w-full shadow-lg shadow-primary-500/20"
           >
-            <CheckCircle2 size={18} />
-            确认投票
-            {selectedOption && (
-              <span className="text-primary-200 ml-1">
-                → {MOCK_OPTIONS.find(o => o.id === selectedOption)?.content}
-              </span>
+            {voting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                投票中...
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={18} />
+                确认投票
+                {selectedOption && (
+                  <span className="text-primary-200 ml-1">
+                    → {options.find(o => o.id === selectedOption)?.content}
+                  </span>
+                )}
+              </>
             )}
           </button>
         </div>
       )}
 
       {/* After Voting */}
-      {voted && isVoting && (
+      {hasVoted && isVoting && (
         <div className="card p-4 border-green-200 bg-green-50/30">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
@@ -274,7 +379,7 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
             <div className="mt-3 p-3 bg-white rounded-xl border border-green-100">
               <p className="text-xs text-slate-400 mb-1">你投票的选项</p>
               <p className="text-sm font-medium text-slate-800">
-                {MOCK_OPTIONS.find(o => o.id === selectedOption)?.content}
+                {options.find(o => o.id === selectedOption)?.content}
               </p>
               {comment && (
                 <p className="text-xs text-slate-500 mt-2 italic">"{comment}"</p>
@@ -320,42 +425,71 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
         </div>
       )}
 
-      {/* Participants (anonymous mode hides names) */}
-      <div className="card p-4 mt-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-            <Users size={14} className="text-slate-400" />
-            投票成员
-          </h4>
-          <span className="text-xs text-slate-400">6/8 已投票</span>
-        </div>
-        <div className="flex -space-x-2">
-          {MOCK_MEMBERS.map((member, i) => (
-            <div
-              key={member.id}
-              className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border-2 border-white flex items-center justify-center text-xs font-medium text-slate-600"
-              title={member.name}
-              style={{ zIndex: MOCK_MEMBERS.length - i }}
-            >
-              {member.name[0]}
-            </div>
-          ))}
-          <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-xs text-slate-400">
-            +2
+      {/* Participants */}
+      {members.length > 0 && (
+        <div className="card p-4 mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+              <Users size={14} className="text-slate-400" />
+              投票成员
+            </h4>
+            <span className="text-xs text-slate-400">{votedCount}/{totalVoters} 已投票</span>
+          </div>
+          <div className="flex -space-x-2">
+            {members.map((member, i) => (
+              <div
+                key={member.user_id}
+                className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border-2 border-white flex items-center justify-center text-xs font-medium text-slate-600"
+                title={member.profiles?.full_name || '未知成员'}
+                style={{ zIndex: members.length - i }}
+              >
+                {member.profiles?.full_name?.[0] || '?'}
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Executions */}
+      {executions.length > 0 && isEnded && (
+        <div className="card p-4 mt-4">
+          <h4 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <CheckCircle2 size={14} className="text-slate-400" />
+            执行任务
+          </h4>
+          <div className="space-y-2">
+            {executions.map(exec => (
+              <div key={exec.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className={clsx(
+                    'w-2 h-2 rounded-full',
+                    exec.status === 'completed' ? 'bg-green-400' :
+                    exec.status === 'in_progress' ? 'bg-blue-400' :
+                    exec.status === 'overdue' ? 'bg-red-400' : 'bg-slate-300'
+                  )} />
+                  <span className="text-sm text-slate-700">{exec.title}</span>
+                </div>
+                {exec.due_date && (
+                  <span className="text-xs text-slate-400">
+                    {format(new Date(exec.due_date), 'MM/dd截止')}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const configs: Record<string, { label: string; color: string; className: string }> = {
-    voting: { label: '进行中', color: 'blue', className: 'badge-info' },
-    passed: { label: '已通过', color: 'green', className: 'badge-success' },
-    rejected: { label: '未通过', color: 'red', className: 'badge-danger' },
-    draft: { label: '草稿', color: 'gray', className: 'badge-neutral' },
-    archived: { label: '已归档', color: 'gray', className: 'badge-neutral' },
+  const configs: Record<string, { label: string; className: string }> = {
+    voting: { label: '进行中', className: 'badge-info' },
+    passed: { label: '已通过', className: 'badge-success' },
+    rejected: { label: '未通过', className: 'badge-danger' },
+    draft: { label: '草稿', className: 'badge-neutral' },
+    archived: { label: '已归档', className: 'badge-neutral' },
   }
   const config = configs[status] || configs.draft
   return <span className={clsx('badge', config.className)}>{config.label}</span>

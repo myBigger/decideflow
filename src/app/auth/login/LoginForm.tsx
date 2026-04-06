@@ -3,19 +3,22 @@
 import { useState, useRef, useTransition } from 'react'
 import Link from 'next/link'
 import { Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import styles from '../auth.module.css'
 import { login } from '@/app/actions/auth'
 
 export default function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
+
+  // 注册成功后从 URL 参数读取提示
+  const justRegistered = searchParams.get('registered') === '1'
 
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
@@ -23,7 +26,6 @@ export default function LoginForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setSuccess(null)
 
     if (!email.trim()) {
       setError('请输入邮箱地址')
@@ -42,9 +44,11 @@ export default function LoginForm() {
 
     startTransition(async () => {
       const result = await login(formData)
-      // If we get here, login failed (Server Action would have redirected on success)
       if (result && 'error' in result) {
-        setError(result.error)
+        setError((result.error as string | undefined) ?? '登录失败')
+      } else if (result && 'success' in result) {
+        // 客户端跳转，确保 cookie 被正确设置后再导航
+        router.push('/dashboard')
       }
     })
   }
@@ -135,10 +139,10 @@ export default function LoginForm() {
             </div>
           )}
 
-          {success && (
+          {justRegistered && (
             <div className={styles['form-success']}>
               <CheckCircle2 size={16} className={styles['form-success-icon']} />
-              <span className={styles['form-success-text']}>{success}</span>
+              <span className={styles['form-success-text']}>注册成功！请查收验证邮件，然后登录</span>
             </div>
           )}
 

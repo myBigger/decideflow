@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus } from 'lucide-react'
-import type { Decision, VoteType } from '@/types/database'
+import type { Decision } from '@/types/database'
 import { decisionsAPI, type DecisionWithMeta } from '@/lib/api/decisions'
 import { SkeletonList, EmptyState, ErrorState } from '@/components/ui'
 import DecisionCard from '@/components/DecisionCard'
+import DecisionDetail from '@/components/DecisionDetail'
 
 interface DashboardHomeProps {
   teamId?: string
@@ -25,6 +26,7 @@ export default function DashboardHome({
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
+  const [selectedDecision, setSelectedDecision] = useState<DecisionWithMeta | null>(null)
 
   const fetchDecisions = useCallback(async (status?: string) => {
     setIsLoading(true)
@@ -48,13 +50,27 @@ export default function DashboardHome({
     }
   }, [teamId, page])
 
-  // 初始加载
   useEffect(() => {
     fetchDecisions(filter)
   }, [fetchDecisions, filter])
 
-  const filteredDecisions = decisions
+  const handleSelectDecision = useCallback((d: DecisionWithMeta) => {
+    setSelectedDecision(d)
+    onSelectDecision(d)
+  }, [onSelectDecision])
 
+  const handleBack = useCallback(() => {
+    setSelectedDecision(null)
+    fetchDecisions(filter)
+  }, [fetchDecisions, filter])
+
+  const handleVote = useCallback(async (decisionId: string, optionId: string) => {
+    // 投票后刷新列表中的数据
+    setSelectedDecision(null)
+    await fetchDecisions(filter)
+  }, [fetchDecisions, filter])
+
+  const filteredDecisions = decisions
   const votingDecisions = filteredDecisions.filter(d => d.status === 'voting')
   const otherDecisions = filteredDecisions.filter(d => d.status !== 'voting')
 
@@ -81,9 +97,20 @@ export default function DashboardHome({
     )
   }
 
+  // 详情视图
+  if (selectedDecision) {
+    return (
+      <DecisionDetail
+        decision={selectedDecision as unknown as Decision}
+        onBack={handleBack}
+        onVote={handleVote}
+      />
+    )
+  }
+
+  // 列表视图
   return (
     <div className="animate-fade-in">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="page-title">
@@ -106,7 +133,6 @@ export default function DashboardHome({
         </button>
       </div>
 
-      {/* Filter tabs */}
       <div className="flex items-center gap-1 mb-6 bg-white rounded-xl p-1 border border-slate-200 w-fit">
         {[
           { key: 'all', label: '全部', count: total },
@@ -135,7 +161,6 @@ export default function DashboardHome({
         ))}
       </div>
 
-      {/* Content */}
       {filteredDecisions.length === 0 ? (
         <EmptyState
           variant={filter === 'voting' ? 'voting' : 'default'}
@@ -156,7 +181,6 @@ export default function DashboardHome({
         />
       ) : (
         <div className="space-y-8">
-          {/* Voting Section */}
           {votingDecisions.length > 0 && (
             <section>
               <div className="flex items-center gap-2 mb-4">
@@ -172,14 +196,13 @@ export default function DashboardHome({
                   <DecisionCard
                     key={decision.id}
                     decision={decision}
-                    onClick={() => onSelectDecision(decision)}
+                    onClick={() => handleSelectDecision(decision)}
                   />
                 ))}
               </div>
             </section>
           )}
 
-          {/* Other Decisions */}
           {otherDecisions.length > 0 && (
             <section>
               <h2 className="section-title">
@@ -191,7 +214,7 @@ export default function DashboardHome({
                   <DecisionCard
                     key={decision.id}
                     decision={decision}
-                    onClick={() => onSelectDecision(decision)}
+                    onClick={() => handleSelectDecision(decision)}
                   />
                 ))}
               </div>
@@ -200,7 +223,6 @@ export default function DashboardHome({
         </div>
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 mt-8">
           <button
