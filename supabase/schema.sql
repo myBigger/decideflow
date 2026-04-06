@@ -7,12 +7,35 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ──────────────────────────────────────────────
--- Enums
+-- Enums (idempotent — skip if already exists)
 -- ──────────────────────────────────────────────
-CREATE TYPE vote_type AS ENUM ('simple', 'weighted', 'anonymous', 'two_round');
-CREATE TYPE decision_status AS ENUM ('draft', 'voting', 'passed', 'rejected', 'archived');
-CREATE TYPE user_role AS ENUM ('owner', 'admin', 'member', 'viewer');
-CREATE TYPE execution_status AS ENUM ('pending', 'in_progress', 'completed', 'overdue');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vote_type') THEN
+    CREATE TYPE vote_type AS ENUM ('simple', 'weighted', 'anonymous', 'two_round');
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'decision_status') THEN
+    CREATE TYPE decision_status AS ENUM ('draft', 'voting', 'passed', 'rejected', 'archived');
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    CREATE TYPE user_role AS ENUM ('owner', 'admin', 'member', 'viewer');
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'execution_status') THEN
+    CREATE TYPE execution_status AS ENUM ('pending', 'in_progress', 'completed', 'overdue');
+  END IF;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- Tables
@@ -144,99 +167,149 @@ ALTER TABLE public.votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.executions ENABLE ROW LEVEL SECURITY;
 
--- Profiles: users can read/update their own profile
-CREATE POLICY "Profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+-- ──────────────────────────────────────────────
+-- RLS Policies (idempotent — skip if already exists)
+-- ──────────────────────────────────────────────
 
--- Teams: members can view their team
-CREATE POLICY "Team members can view team" ON public.teams
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.team_members WHERE team_id = teams.id AND user_id = auth.uid())
-  );
+-- Profiles
+DO $$ BEGIN
+  CREATE POLICY "Profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
--- Team Members: members can view team roster
-CREATE POLICY "Team members visible to members" ON public.team_members
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.team_members tm WHERE tm.team_id = team_members.team_id AND tm.user_id = auth.uid())
-  );
+DO $$ BEGIN
+  CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
--- Decisions: team members can CRUD
-CREATE POLICY "Team members can view decisions" ON public.decisions
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.team_members WHERE team_id = decisions.team_id AND user_id = auth.uid())
-  );
+-- Teams
+DO $$ BEGIN
+  CREATE POLICY "Team members can view team" ON public.teams
+    FOR SELECT USING (
+      EXISTS (SELECT 1 FROM public.team_members WHERE team_id = teams.id AND user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
-CREATE POLICY "Team members can create decisions" ON public.decisions
-  FOR INSERT WITH CHECK (auth.uid() = created_by);
+-- Team Members
+DO $$ BEGIN
+  CREATE POLICY "Team members visible to members" ON public.team_members
+    FOR SELECT USING (
+      EXISTS (SELECT 1 FROM public.team_members tm WHERE tm.team_id = team_members.team_id AND tm.user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
-CREATE POLICY "Admins and owner can update decisions" ON public.decisions
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.team_members
-      WHERE team_id = decisions.team_id
-        AND user_id = auth.uid()
-        AND role IN ('owner', 'admin')
-    )
-    OR auth.uid() = decisions.created_by
-  );
+-- Decisions
+DO $$ BEGIN
+  CREATE POLICY "Team members can view decisions" ON public.decisions
+    FOR SELECT USING (
+      EXISTS (SELECT 1 FROM public.team_members WHERE team_id = decisions.team_id AND user_id = auth.uid())
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
--- Options: inherits decision access
-CREATE POLICY "Team members can view options" ON public.options
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.decisions d WHERE d.id = options.decision_id)
-  );
+DO $$ BEGIN
+  CREATE POLICY "Team members can create decisions" ON public.decisions
+    FOR INSERT WITH CHECK (auth.uid() = created_by);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
-CREATE POLICY "Decision creators can manage options" ON public.options
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.decisions d
-      WHERE d.id = options.decision_id AND d.created_by = auth.uid()
-    )
-  );
+DO $$ BEGIN
+  CREATE POLICY "Admins and owner can update decisions" ON public.decisions
+    FOR UPDATE USING (
+      EXISTS (
+        SELECT 1 FROM public.team_members
+        WHERE team_id = decisions.team_id
+          AND user_id = auth.uid()
+          AND role IN ('owner', 'admin')
+      )
+      OR auth.uid() = decisions.created_by
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
--- Votes: team members can vote
-CREATE POLICY "Team members can view own votes" ON public.votes
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Team members can view anonymous aggregate" ON public.votes
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM public.decisions dec
-      JOIN public.team_members tm ON tm.team_id = dec.team_id
-      WHERE dec.id = votes.decision_id AND tm.user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "Team members can vote" ON public.votes
-  FOR INSERT WITH CHECK (
-    auth.uid() = user_id
-    AND EXISTS (
-      SELECT 1 FROM public.decisions d
-      JOIN public.team_members tm ON tm.team_id = d.team_id
-      WHERE d.id = votes.decision_id AND tm.user_id = auth.uid()
+-- Options
+DO $$ BEGIN
+  CREATE POLICY "Team members can view options" ON public.options
+    FOR SELECT USING (
+      EXISTS (SELECT 1 FROM public.decisions d WHERE d.id = options.decision_id)
     )
   );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Decision creators can manage options" ON public.options
+    FOR ALL USING (
+      EXISTS (
+        SELECT 1 FROM public.decisions d
+        WHERE d.id = options.decision_id AND d.created_by = auth.uid()
+      )
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+-- Votes
+DO $$ BEGIN
+  CREATE POLICY "Team members can view own votes" ON public.votes
+    FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Team members can view anonymous aggregate" ON public.votes
+    FOR SELECT USING (
+      EXISTS (
+        SELECT 1 FROM public.decisions dec
+        JOIN public.team_members tm ON tm.team_id = dec.team_id
+        WHERE dec.id = votes.decision_id AND tm.user_id = auth.uid()
+      )
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Team members can vote" ON public.votes
+    FOR INSERT WITH CHECK (
+      auth.uid() = user_id
+      AND EXISTS (
+        SELECT 1 FROM public.decisions d
+        JOIN public.team_members tm ON tm.team_id = d.team_id
+        WHERE d.id = votes.decision_id AND tm.user_id = auth.uid()
+      )
+    )
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- Comments
-CREATE POLICY "Team members can comment" ON public.comments
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.decisions d
-      JOIN public.team_members tm ON tm.team_id = d.team_id
-      WHERE d.id = comments.decision_id AND tm.user_id = auth.uid()
-    )
-    OR auth.uid() = user_id
-  );
+DO $$ BEGIN
+  CREATE POLICY "Team members can comment" ON public.comments
+    FOR ALL USING (
+      EXISTS (
+        SELECT 1 FROM public.decisions d
+        JOIN public.team_members tm ON tm.team_id = d.team_id
+        WHERE d.id = comments.decision_id AND tm.user_id = auth.uid()
+      )
+      OR auth.uid() = user_id
+    );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- Executions
-CREATE POLICY "Team members can manage executions" ON public.executions
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.decisions d
-      JOIN public.team_members tm ON tm.team_id = d.team_id
-      WHERE d.id = executions.decision_id AND tm.user_id = auth.uid()
+DO $$ BEGIN
+  CREATE POLICY "Team members can manage executions" ON public.executions
+    FOR ALL USING (
+      EXISTS (
+        SELECT 1 FROM public.decisions d
+        JOIN public.team_members tm ON tm.team_id = d.team_id
+        WHERE d.id = executions.decision_id AND tm.user_id = auth.uid()
+      )
     )
   );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- Functions & Triggers
@@ -257,9 +330,14 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'on_auth_user_created') THEN
+    CREATE TRIGGER on_auth_user_created
+      AFTER INSERT ON auth.users
+      FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+  END IF;
+END $$;
 
 -- Auto-update updated_at
 CREATE OR REPLACE FUNCTION public.update_updated_at()
@@ -270,17 +348,37 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER update_decisions_updated_at BEFORE UPDATE ON public.decisions
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_decisions_updated_at') THEN
+    CREATE TRIGGER update_decisions_updated_at BEFORE UPDATE ON public.decisions
+      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+  END IF;
+END $$;
 
-CREATE TRIGGER update_executions_updated_at BEFORE UPDATE ON public.executions
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_executions_updated_at') THEN
+    CREATE TRIGGER update_executions_updated_at BEFORE UPDATE ON public.executions
+      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+  END IF;
+END $$;
 
-CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON public.teams
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_teams_updated_at') THEN
+    CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON public.teams
+      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+  END IF;
+END $$;
 
-CREATE TRIGGER update_team_members_updated_at BEFORE UPDATE ON public.team_members
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_team_members_updated_at') THEN
+    CREATE TRIGGER update_team_members_updated_at BEFORE UPDATE ON public.team_members
+      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+  END IF;
+END $$;
 
 -- Auto-close voting when time expires (optional, uses pg_cron or can be called manually)
 --
