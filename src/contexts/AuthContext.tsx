@@ -107,10 +107,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 异步获取团队信息
         fetchTeams(initialSession.user.id).then(teamsData => {
           setTeams(teamsData)
+          teamsFetched.current = true
           if (teamsData.length > 0) {
             setCurrentTeamState(teamsData[0])
           }
-        }).catch(() => {})
+        }).catch(() => {
+          teamsFetched.current = true  // 失败也标记，防止无限重试
+        })
       }
       setIsLoading(false)
     }).catch(() => {
@@ -124,17 +127,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (session) {
           setUser(mapUser(session.user))
           if (!teamsFetched.current) {
-            teamsFetched.current = true
-            const teamsData = await fetchTeams(session.user.id)
-            setTeams(teamsData)
-            if (teamsData.length > 0) {
-              setCurrentTeamState(teamsData[0])
+            teamsFetched.current = true  // 标记在 await 之前，防止并发触发
+            try {
+              const teamsData = await fetchTeams(session.user.id)
+              setTeams(teamsData)
+              if (teamsData.length > 0) {
+                setCurrentTeamState(teamsData[0])
+              }
+            } catch {
+              // fetch 失败不影响 auth 状态
             }
           }
         } else {
           setUser(null)
           setTeams([])
           setCurrentTeamState(null)
+          teamsFetched.current = false  // 登出后重置，允许下次登录重新获取团队
         }
       }
     )

@@ -206,7 +206,7 @@ export async function PATCH(
 
     // 允许更新的字段
     const allowedUpdates: Record<string, any> = {}
-    if (updates.title !== undefined) allowedUpdates.title = updates.title.trim()
+    if (updates.title !== undefined && updates.title !== null) allowedUpdates.title = updates.title.trim()
     if (updates.description !== undefined) allowedUpdates.description = updates.description?.trim() || null
     if (updates.pass_threshold !== undefined) allowedUpdates.pass_threshold = updates.pass_threshold
     if (updates.voting_end !== undefined) allowedUpdates.voting_end = updates.voting_end

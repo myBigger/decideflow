@@ -177,6 +177,7 @@ export interface Database {
           user_id: string
           weight: number // 投票时记录的权重（后续可能变更）
           comment: string | null
+          round: number // 投票轮次（两轮制中使用，simple/weighted/anonymous 默认 round=1）
           created_at: string
         }
         Insert: {
@@ -186,6 +187,7 @@ export interface Database {
           user_id: string
           weight?: number
           comment?: string | null
+          round?: number
           created_at?: string
         }
         Update: {
@@ -195,6 +197,7 @@ export interface Database {
           user_id?: string
           weight?: number
           comment?: string | null
+          round?: number
           created_at?: string
         }
       }

@@ -93,20 +93,26 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: '获取决策列表失败' }, { status: 500 })
     }
 
-    // 获取每个决策的投票统计
-    const decisionsWithStats = await Promise.all(
-      (decisions || []).map(async (decision) => {
-        const { count: voteCount } = await supabase
-          .from('votes')
-          .select('*', { count: 'exact', head: true })
-          .eq('decision_id', decision.id)
+    // 一次性批量获取所有决策的投票数（N+1 → 1 query）
+    const decisionIds = (decisions || []).map(d => d.id)
+    let voteCountMap: Record<string, number> = {}
+    if (decisionIds.length > 0) {
+      const { data: allVotes } = await supabase
+        .from('votes')
+        .select('decision_id')
+        .in('decision_id', decisionIds)
 
-        return {
-          ...decision,
-          vote_count: voteCount || 0,
-        }
-      })
-    )
+      if (allVotes) {
+        allVotes.forEach(v => {
+          voteCountMap[v.decision_id] = (voteCountMap[v.decision_id] || 0) + 1
+        })
+      }
+    }
+
+    const decisionsWithStats = (decisions || []).map(decision => ({
+      ...decision,
+      vote_count: voteCountMap[decision.id] || 0,
+    }))
 
     return NextResponse.json({
       success: true,

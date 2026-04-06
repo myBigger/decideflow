@@ -72,6 +72,9 @@ export default function CreateDecisionModal({ onClose, onCreated, teamId }: Crea
 
       if (result.success) {
         onCreated(result.decision)
+      } else {
+        // API 返回 success:false 时显示错误信息
+        setErrors({ submit: (result as any).error || '创建失败，请重试' })
       }
     } catch (err: any) {
       setErrors({ submit: err.message || '创建失败，请重试' })

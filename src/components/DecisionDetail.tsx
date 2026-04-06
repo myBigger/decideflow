@@ -54,12 +54,17 @@ export default function DecisionDetail({ decision, onBack, onVote }: DecisionDet
     try {
       const res = await decisionsAPI.getById(decision.id)
       setData(res)
+      // 每次加载时重置表单状态，避免跨决策污染
+      setSelectedOption(null)
+      setComment('')
       if (res.current_user_vote) {
         setVoted(true)
         setSelectedOption(res.current_user_vote.option_id)
         if (res.current_user_vote.comment) {
           setComment(res.current_user_vote.comment)
         }
+      } else {
+        setVoted(false)
       }
     } catch (err: any) {
       setError(err.message || '加载失败')

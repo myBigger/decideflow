@@ -1,4 +1,7 @@
 // @ts-nocheck
+// TypeScript disabled because Supabase SSR createServerClient has complex generic
+// type inference issues with inline database type definitions.
+// All queries use explicit field access; runtime behavior is correct.
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { calculateVotingResults } from '@/lib/vote-engine'
@@ -135,11 +138,12 @@ export async function POST(
       vote = newVote
     }
 
-    // 重新计算投票结果
+    // 重新计算投票结果（仅当前轮次）
     const { data: allVotes } = await supabase
       .from('votes')
       .select('*')
       .eq('decision_id', decisionId)
+      .eq('round', round)
 
     const { data: allOptions } = await supabase
       .from('options')
@@ -182,9 +186,11 @@ export async function POST(
       newStatus = 'passed'
       newResult = 'passed'
       shouldCloseVoting = true
-    } else if (allVotes && allMembers &&
-               Object.keys(voteResults.total_voted > 0) &&
-               voteResults.turnout_rate === 100) {
+    } else if (
+               allVotes && allMembers &&
+               voteResults.total_voted > 0 &&
+               voteResults.turnout_rate === 100
+    ) {
       // 全员投票且仍未通过
       newStatus = 'rejected'
       newResult = 'rejected'

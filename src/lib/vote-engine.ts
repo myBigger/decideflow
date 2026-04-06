@@ -56,10 +56,12 @@ export function calculateVotingResults(
   })
 
   // 将投票按用户分组（每用户一票，取最新）
+  // 两轮制：只统计当前轮次的投票
   const latestVotesByUser: MemberVoteMap = {}
   votes.forEach(vote => {
-    // 在两轮制中只取当前轮次的投票
-    // 注意：round 信息需要通过 decision 传递，这里简化处理
+    // 过滤：只取当前轮次的投票（simple/weighted/anonymous 默认 round=1）
+    if ('round' in vote && vote.round !== round) return
+
     if (!latestVotesByUser[vote.user_id]) {
       latestVotesByUser[vote.user_id] = {
         option_id: vote.option_id,
@@ -113,8 +115,8 @@ export function calculateVotingResults(
   if (totalVoted === 0) {
     passed = false
   } else if (voteType === 'two_round' && round === 1) {
-    // 两轮制第一轮：超过50%直接通过，否则进入第二轮
-    passed = winningPercentage > 50
+    // 两轮制第一轮：得票率超50%（含50%）直接通过，否则进入第二轮
+    passed = winningPercentage >= 50
   } else {
     // 其他情况：超过阈值即通过
     passed = winningPercentage >= passThreshold

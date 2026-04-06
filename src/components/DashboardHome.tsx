@@ -12,12 +12,20 @@ interface DashboardHomeProps {
   teamId?: string
   onSelectDecision: (d: Decision) => void
   onCreateClick: () => void
+  votingCount?: number
+  passedCount?: number
+  draftCount?: number
+  totalCount?: number
 }
 
 export default function DashboardHome({
   teamId,
   onSelectDecision,
   onCreateClick,
+  votingCount,
+  passedCount,
+  draftCount,
+  totalCount,
 }: DashboardHomeProps) {
   const [decisions, setDecisions] = useState<DecisionWithMeta[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -135,10 +143,10 @@ export default function DashboardHome({
 
       <div className="flex items-center gap-1 mb-6 bg-white rounded-xl p-1 border border-slate-200 w-fit">
         {[
-          { key: 'all', label: '全部', count: total },
-          { key: 'voting', label: '进行中', count: votingDecisions.length },
-          { key: 'draft', label: '草稿', count: otherDecisions.filter(d => d.status === 'draft').length },
-          { key: 'passed', label: '已结束', count: otherDecisions.filter(d => d.status === 'passed').length },
+          { key: 'all', label: '全部', count: totalCount ?? total },
+          { key: 'voting', label: '进行中', count: votingCount ?? votingDecisions.length },
+          { key: 'draft', label: '草稿', count: draftCount ?? otherDecisions.filter(d => d.status === 'draft').length },
+          { key: 'passed', label: '已结束', count: passedCount ?? otherDecisions.filter(d => d.status === 'passed').length },
         ].map(tab => (
           <button
             key={tab.key}

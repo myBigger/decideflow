@@ -7,7 +7,17 @@ import { useAuth } from '@/contexts/AuthContext'
 import TeamSwitcher from '@/components/TeamSwitcher'
 import DashboardHome from '@/components/DashboardHome'
 import CreateDecisionModal from '@/components/CreateDecisionModal'
+import { decisionsAPI } from '@/lib/api/decisions'
 import type { Decision } from '@/types/database'
+
+// 团队统计数据
+interface TeamStats {
+  voting: number
+  passed: number
+  draft: number
+  total: number
+  thisMonth: number
+}
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading, user, currentTeam, logout } = useAuth()
@@ -16,6 +26,7 @@ export default function DashboardPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedDecision, setSelectedDecision] = useState<Decision | null>(null)
   const [sidebarFilter, setSidebarFilter] = useState<'all' | 'voting' | 'passed' | 'draft'>('all')
+  const [teamStats, setTeamStats] = useState<TeamStats>({ voting: 0, passed: 0, draft: 0, total: 0, thisMonth: 0 })
 
   // 认证保护：等待加载完成后重定向
   useEffect(() => {
@@ -28,6 +39,39 @@ export default function DashboardPage() {
     await logout()
     router.push('/auth/login')
   }
+
+  // 获取团队统计数据
+  const fetchTeamStats = useCallback(async (teamId: string) => {
+    try {
+      const [votingRes, passedRes, allRes] = await Promise.all([
+        decisionsAPI.list({ teamId, status: 'voting', pageSize: 1 }),
+        decisionsAPI.list({ teamId, status: 'passed', pageSize: 1 }),
+        decisionsAPI.list({ teamId, pageSize: 100 }),
+      ])
+
+      const thisMonth = new Date()
+      const thisMonthDecisions = (allRes.decisions || []).filter(d => {
+        const created = new Date(d.created_at)
+        return created.getMonth() === thisMonth.getMonth() && created.getFullYear() === thisMonth.getFullYear()
+      })
+
+      setTeamStats({
+        voting: votingRes.total || 0,
+        passed: passedRes.total || 0,
+        draft: (allRes.decisions || []).filter(d => d.status === 'draft').length,
+        total: allRes.total || 0,
+        thisMonth: thisMonthDecisions.length,
+      })
+    } catch {
+      // stats 失败不影响主流程，静默处理
+    }
+  }, [])
+
+  useEffect(() => {
+    if (currentTeam?.teams?.id) {
+      fetchTeamStats(currentTeam.teams.id)
+    }
+  }, [currentTeam, fetchTeamStats])
 
   const handleDecisionCreated = useCallback((decision: Decision) => {
     setShowCreateModal(false)
@@ -71,9 +115,9 @@ export default function DashboardPage() {
 
               {/* Quick stats */}
               <div className="hidden lg:flex items-center gap-4 ml-4 text-sm">
-                <QuickStat label="进行中" value="3" color="text-primary-600 bg-primary-50" />
-                <QuickStat label="已通过" value="12" color="text-green-600 bg-green-50" />
-                <QuickStat label="本月" value="5" color="text-purple-600 bg-purple-50" />
+                <QuickStat label="进行中" value={String(teamStats.voting)} color="text-primary-600 bg-primary-50" />
+                <QuickStat label="已通过" value={String(teamStats.passed)} color="text-green-600 bg-green-50" />
+                <QuickStat label="本月" value={String(teamStats.thisMonth)} color="text-purple-600 bg-purple-50" />
               </div>
             </div>
 
@@ -117,10 +161,10 @@ export default function DashboardPage() {
           <div className="sticky top-24">
             {/* Navigation */}
             <nav className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm mb-4">
-              <SidebarFilter label="全部" icon="📋" count={5} active={sidebarFilter === 'all'} onClick={() => setSidebarFilter('all')} />
-              <SidebarFilter label="进行中" icon="⏱" count={3} active={sidebarFilter === 'voting'} onClick={() => setSidebarFilter('voting')} badge="pulse" />
-              <SidebarFilter label="已结束" icon="✅" count={2} active={sidebarFilter === 'passed'} onClick={() => setSidebarFilter('passed')} />
-              <SidebarFilter label="草稿" icon="📝" count={1} active={sidebarFilter === 'draft'} onClick={() => setSidebarFilter('draft')} />
+              <SidebarFilter label="全部" icon="📋" count={teamStats.total} active={sidebarFilter === 'all'} onClick={() => setSidebarFilter('all')} />
+              <SidebarFilter label="进行中" icon="⏱" count={teamStats.voting} active={sidebarFilter === 'voting'} onClick={() => setSidebarFilter('voting')} badge="pulse" />
+              <SidebarFilter label="已结束" icon="✅" count={teamStats.passed} active={sidebarFilter === 'passed'} onClick={() => setSidebarFilter('passed')} />
+              <SidebarFilter label="草稿" icon="📝" count={teamStats.draft} active={sidebarFilter === 'draft'} onClick={() => setSidebarFilter('draft')} />
             </nav>
 
             {/* Team Info */}
@@ -174,6 +218,10 @@ export default function DashboardPage() {
             teamId={currentTeam?.teams?.id}
             onSelectDecision={setSelectedDecision}
             onCreateClick={() => setShowCreateModal(true)}
+            votingCount={teamStats.voting}
+            passedCount={teamStats.passed}
+            draftCount={teamStats.draft}
+            totalCount={teamStats.total}
           />
         </main>
       </div>
