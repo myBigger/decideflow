@@ -18,7 +18,7 @@ export async function login(formData: FormData) {
 
   const supabase = await createClient()
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   })
@@ -27,9 +27,28 @@ export async function login(formData: FormData) {
     return { error: '邮箱或密码错误' }
   }
 
-  // 返回成功标识，由客户端执行跳转
-  // （Server Action 的 redirect 在 Vercel Serverless 中可能导致 cookie 未被正确设置）
-  return { success: true }
+  if (!data.session) {
+    return { error: '登录失败，请稍后重试' }
+  }
+
+  // 返回 session 数据，由客户端用 setSession() 写入浏览器
+  // 这样可以绕过 Vercel Serverless cookie 序列化时序问题
+  return {
+    success: true,
+    session: {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_at: data.session.expires_at,
+      expires_in: data.session.expires_in,
+    },
+    user: data.user
+      ? {
+          id: data.user.id,
+          email: data.user.email,
+          user_metadata: data.user.user_metadata,
+        }
+      : null,
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -76,7 +95,8 @@ export async function register(formData: FormData) {
 export async function logout() {
   const supabase = await createClient()
   await supabase.auth.signOut()
-  redirect('/auth/login')
+  // 不再使用 redirect，让客户端执行跳转，确保 session 被清除
+  return { success: true }
 }
 
 // ──────────────────────────────────────────────

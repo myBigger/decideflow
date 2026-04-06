@@ -6,6 +6,7 @@ import { Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react
 import { useRouter, useSearchParams } from 'next/navigation'
 import styles from '../auth.module.css'
 import { login } from '@/app/actions/auth'
+import { createClient } from '@/lib/supabase/client'
 
 export default function LoginForm() {
   const router = useRouter()
@@ -46,9 +47,18 @@ export default function LoginForm() {
       const result = await login(formData)
       if (result && 'error' in result) {
         setError((result.error as string | undefined) ?? '登录失败')
-      } else if (result && 'success' in result) {
-        // 客户端跳转，确保 cookie 被正确设置后再导航
-        router.push('/dashboard')
+      } else if (result && 'success' in result && result.session) {
+        // 关键：显式将 session 写入浏览器 Supabase client（绕过 cookie 时序问题）
+        const browserSupabase = createClient()
+        await browserSupabase.auth.setSession({
+          access_token: result.session!.access_token,
+          refresh_token: result.session!.refresh_token,
+        })
+        // 登录成功后读取 redirect 参数跳转
+        const redirectTo = searchParams.get('redirect') || '/dashboard'
+        router.push(redirectTo)
+        // 强制刷新让 AuthContext 重新初始化
+        router.refresh()
       }
     })
   }
