@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   Sparkles, RefreshCw, AlertTriangle, Lightbulb, Clock,
   CheckCircle2, TrendingUp, Calendar, ChevronDown, ChevronUp,
@@ -29,6 +29,11 @@ export default function AIInsightPanel({
   const [error, setError] = useState<string | null>(null)
   const [localInsight, setLocalInsight] = useState<AIInsight | null>(insight)
   const [showTip, setShowTip] = useState(false)
+
+  // 当父组件传入的 insight prop 变化时，同步本地状态（避免 prop 变了但 UI 不更新）
+  useEffect(() => {
+    setLocalInsight(insight)
+  }, [insight])
 
   const hasInsight = !!localInsight
 

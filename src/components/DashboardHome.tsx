@@ -58,6 +58,12 @@ export default function DashboardHome({
     }
   }, [teamId, page])
 
+  // 切换团队时重置筛选条件到"全部"
+  useEffect(() => {
+    setFilter('all')
+    setPage(1)
+  }, [teamId])
+
   useEffect(() => {
     fetchDecisions(filter)
   }, [fetchDecisions, filter])

@@ -115,8 +115,8 @@ export function calculateVotingResults(
   if (totalVoted === 0) {
     passed = false
   } else if (voteType === 'two_round' && round === 1) {
-    // 两轮制第一轮：得票率超50%（含50%）直接通过，否则进入第二轮
-    passed = winningPercentage >= 50
+    // 两轮制第一轮：使用 passThreshold（含50%）直接通过，否则进入第二轮
+    passed = winningPercentage >= passThreshold
   } else {
     // 其他情况：超过阈值即通过
     passed = winningPercentage >= passThreshold

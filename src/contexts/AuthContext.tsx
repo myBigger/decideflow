@@ -99,37 +99,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 初始化：监听浏览器端 Supabase auth 状态
   useEffect(() => {
+    let mounted = true  // 防止组件卸载后仍更新状态
+
     // 立即获取初始 session（从 localStorage/cookie 中恢复）
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (!mounted) return
       if (initialSession) {
         setSession(initialSession)
         setUser(mapUser(initialSession.user))
         // 异步获取团队信息
         fetchTeams(initialSession.user.id).then(teamsData => {
+          if (!mounted) return
           setTeams(teamsData)
           teamsFetched.current = true
           if (teamsData.length > 0) {
             setCurrentTeamState(teamsData[0])
           }
         }).catch(() => {
-          teamsFetched.current = true  // 失败也标记，防止无限重试
+          if (!mounted) return
+          teamsFetched.current = true
         })
       }
       setIsLoading(false)
     }).catch(() => {
+      if (!mounted) return
       setIsLoading(false)
     })
 
     // 监听后续 auth 变化
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!mounted) return
         setSession(session)
         if (session) {
           setUser(mapUser(session.user))
           if (!teamsFetched.current) {
-            teamsFetched.current = true  // 标记在 await 之前，防止并发触发
+            teamsFetched.current = true
             try {
               const teamsData = await fetchTeams(session.user.id)
+              if (!mounted) return
               setTeams(teamsData)
               if (teamsData.length > 0) {
                 setCurrentTeamState(teamsData[0])
@@ -142,12 +150,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null)
           setTeams([])
           setCurrentTeamState(null)
-          teamsFetched.current = false  // 登出后重置，允许下次登录重新获取团队
+          teamsFetched.current = false
         }
       }
     )
 
     return () => {
+      mounted = false
       subscription.unsubscribe()
     }
   }, [supabase, fetchTeams, mapUser])

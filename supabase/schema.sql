@@ -276,16 +276,24 @@ CREATE TRIGGER update_decisions_updated_at BEFORE UPDATE ON public.decisions
 CREATE TRIGGER update_executions_updated_at BEFORE UPDATE ON public.executions
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
+CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON public.teams
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+CREATE TRIGGER update_team_members_updated_at BEFORE UPDATE ON public.team_members
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
 -- Auto-close voting when time expires (optional, uses pg_cron or can be called manually)
+--
+-- NOTE: This function only handles time-based expiry. Vote result calculation (passed/rejected)
+-- must be done by the vote route when a user votes and the threshold is met.
+-- This function marks expired votings as 'rejected' if they haven't been closed yet.
 CREATE OR REPLACE FUNCTION public.close_expired_votings()
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
   UPDATE public.decisions
   SET
-    status = CASE
-      WHEN final_result = 'passed' THEN 'passed'
-      ELSE 'rejected'
-    END
+    status = 'rejected',
+    final_result = 'rejected'
   WHERE status = 'voting'
     AND voting_end IS NOT NULL
     AND voting_end < NOW();
