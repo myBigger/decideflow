@@ -8,6 +8,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react'
+import { getSession, logout as serverLogout } from '@/app/actions/auth'
 
 // ──────────────────────────────────────────────
 // Types
@@ -41,8 +42,6 @@ interface AuthContextValue {
   currentTeam: TeamMembership | null
 
   // Actions
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
-  register: (email: string, password: string, full_name?: string) => Promise<{ success: boolean; error?: string; message?: string }>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   setCurrentTeam: (teamId: string) => void
@@ -60,19 +59,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentTeam, setCurrentTeamState] = useState<TeamMembership | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // 初始化：检查当前登录状态
+  // 初始化：检查当前登录状态（使用 Server Action 读取 cookies）
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const res = await fetch('/api/auth/me')
-        const data = await res.json()
+        const session = await getSession()
 
-        if (data.authenticated && data.user) {
-          setUser(data.user)
-          setTeams(data.teams || [])
+        if (session.authenticated && session.user) {
+          setUser(session.user as User)
+          setTeams((session.teams || []) as TeamMembership[])
           // 自动选择第一个团队
-          if (data.teams && data.teams.length > 0) {
-            setCurrentTeamState(data.teams[0])
+          if (session.teams && session.teams.length > 0) {
+            setCurrentTeamState(session.teams[0] as TeamMembership)
           }
         } else {
           setUser(null)
@@ -89,67 +87,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth()
   }, [])
 
-  // 登录
-  const login = useCallback(async (email: string, password: string) => {
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        return { success: false, error: data.error || '登录失败' }
-      }
-
-      setUser(data.user)
-      // 重新获取团队信息
-      const meRes = await fetch('/api/auth/me')
-      const meData = await meRes.json()
-      setTeams(meData.teams || [])
-      if (meData.teams && meData.teams.length > 0) {
-        setCurrentTeamState(meData.teams[0])
-      }
-
-      return { success: true }
-    } catch {
-      return { success: false, error: '网络错误，请稍后重试' }
-    }
-  }, [])
-
-  // 注册
-  const register = useCallback(async (email: string, password: string, full_name?: string) => {
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, full_name }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        return { success: false, error: data.error || '注册失败' }
-      }
-
-      return {
-        success: true,
-        message: data.message || '注册成功',
-      }
-    } catch {
-      return { success: false, error: '网络错误，请稍后重试' }
-    }
-  }, [])
-
-  // 登出
+  // 登出（使用 Server Action）
   const logout = useCallback(async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
+      await serverLogout()
     } catch {
       // 即使失败也清除本地状态
-    } finally {
       setUser(null)
       setTeams([])
       setCurrentTeamState(null)
@@ -159,12 +102,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 刷新用户信息
   const refreshUser = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me')
-      const data = await res.json()
-
-      if (data.authenticated && data.user) {
-        setUser(data.user)
-        setTeams(data.teams || [])
+      const session = await getSession()
+      if (session.authenticated && session.user) {
+        setUser(session.user as User)
+        setTeams((session.teams || []) as TeamMembership[])
       } else {
         setUser(null)
         setTeams([])
@@ -189,8 +130,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     isAuthenticated: !!user,
     currentTeam,
-    login,
-    register,
     logout,
     refreshUser,
     setCurrentTeam,

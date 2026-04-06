@@ -1,8 +1,10 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, CookieOptionsWithName } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import type { ResponseCookie } from 'next/dist/compiled/@edge-runtime/cookies'
 
-// 复制 client.ts 中的 Database 类型定义（保持一致）
+// ──────────────────────────────────────────────
+// Database Types (inline to avoid inference issues)
+// ──────────────────────────────────────────────
+
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 type Database = {
@@ -53,8 +55,14 @@ type Database = {
   }
 }
 
+// ──────────────────────────────────────────────
+// Create Server Client
+// ──────────────────────────────────────────────
+
 export async function createClient() {
   const cookieStore = await cookies()
+
+  const isProduction = process.env.NODE_ENV === 'production'
 
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -64,13 +72,20 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll()
         },
-        setAll(cookiesToSet: { name: string; value: string; options?: ResponseCookie }[]) {
+        setAll(cookiesToSet: CookieOptionsWithName[]) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, {
+                httpOnly: options?.httpOnly ?? true,
+                secure: options?.secure ?? isProduction,
+                sameSite: (options?.sameSite ?? 'lax') as 'lax' | 'strict' | 'none',
+                path: options?.path ?? '/',
+                domain: options?.domain,
+                maxAge: options?.maxAge,
+              })
+            })
           } catch {
-            // Server Component - ignore
+            // Server Component / middleware context - ignore
           }
         },
       },
