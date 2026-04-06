@@ -42,117 +42,175 @@ END $$;
 -- ──────────────────────────────────────────────
 
 -- 1. 用户资料 (extends auth.users)
-CREATE TABLE public.profiles (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  email TEXT NOT NULL,
-  full_name TEXT,
-  avatar_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$ BEGIN
+  CREATE TABLE public.profiles (
+    id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+    email TEXT NOT NULL,
+    full_name TEXT,
+    avatar_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 2. 团队
-CREATE TABLE public.teams (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  name TEXT NOT NULL,
-  slug TEXT UNIQUE NOT NULL,
-  avatar_url TEXT,
-  owner_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$ BEGIN
+  CREATE TABLE public.teams (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    avatar_url TEXT,
+    owner_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 3. 团队成员
-CREATE TABLE public.team_members (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  role user_role DEFAULT 'member',
-  weight INTEGER DEFAULT 1 CHECK (weight >= 1 AND weight <= 10),
-  nickname TEXT,
-  joined_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(team_id, user_id)
-);
+DO $$ BEGIN
+  CREATE TABLE public.team_members (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    role user_role DEFAULT 'member',
+    weight INTEGER DEFAULT 1 CHECK (weight >= 1 AND weight <= 10),
+    nickname TEXT,
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(team_id, user_id)
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 4. 决策
-CREATE TABLE public.decisions (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
-  title TEXT NOT NULL CHECK (length(title) <= 200),
-  description TEXT,
-  vote_type vote_type DEFAULT 'simple',
-  status decision_status DEFAULT 'draft',
-  created_by UUID REFERENCES public.profiles(id) NOT NULL,
-  voting_start TIMESTAMPTZ,
-  voting_end TIMESTAMPTZ,
-  pass_threshold INTEGER DEFAULT 50 CHECK (pass_threshold >= 1 AND pass_threshold <= 100),
-  total_score INTEGER,
-  final_result TEXT CHECK (final_result IN ('passed', 'rejected')),
-  round INTEGER DEFAULT 1 CHECK (round >= 1 AND round <= 2),
-  ai_insight JSONB,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$ BEGIN
+  CREATE TABLE public.decisions (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
+    title TEXT NOT NULL CHECK (length(title) <= 200),
+    description TEXT,
+    vote_type vote_type DEFAULT 'simple',
+    status decision_status DEFAULT 'draft',
+    created_by UUID REFERENCES public.profiles(id) NOT NULL,
+    voting_start TIMESTAMPTZ,
+    voting_end TIMESTAMPTZ,
+    pass_threshold INTEGER DEFAULT 50 CHECK (pass_threshold >= 1 AND pass_threshold <= 100),
+    total_score INTEGER,
+    final_result TEXT CHECK (final_result IN ('passed', 'rejected')),
+    round INTEGER DEFAULT 1 CHECK (round >= 1 AND round <= 2),
+    ai_insight JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 5. 投票选项
-CREATE TABLE public.options (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
-  content TEXT NOT NULL CHECK (length(content) <= 500),
-  description TEXT,
-  order_index INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$ BEGIN
+  CREATE TABLE public.options (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
+    content TEXT NOT NULL CHECK (length(content) <= 500),
+    description TEXT,
+    order_index INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 6. 投票记录
-CREATE TABLE public.votes (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
-  option_id UUID REFERENCES public.options(id) ON DELETE CASCADE NOT NULL,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  weight INTEGER DEFAULT 1 CHECK (weight >= 1),
-  comment TEXT,
-  round INTEGER DEFAULT 1,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  -- 每个用户在每轮只能投一票
-  UNIQUE(decision_id, user_id, round)
-);
+DO $$ BEGIN
+  CREATE TABLE public.votes (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
+    option_id UUID REFERENCES public.options(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    weight INTEGER DEFAULT 1 CHECK (weight >= 1),
+    comment TEXT,
+    round INTEGER DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(decision_id, user_id, round)
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 7. 评论
-CREATE TABLE public.comments (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  content TEXT NOT NULL CHECK (length(content) <= 2000),
-  parent_id UUID REFERENCES public.comments(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$ BEGIN
+  CREATE TABLE public.comments (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    content TEXT NOT NULL CHECK (length(content) <= 2000),
+    parent_id UUID REFERENCES public.comments(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 8. 执行追踪
-CREATE TABLE public.executions (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
-  title TEXT NOT NULL,
-  assignee_id UUID REFERENCES public.profiles(id),
-  due_date DATE,
-  status execution_status DEFAULT 'pending',
-  completed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+DO $$ BEGIN
+  CREATE TABLE public.executions (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    decision_id UUID REFERENCES public.decisions(id) ON DELETE CASCADE NOT NULL,
+    title TEXT NOT NULL,
+    assignee_id UUID REFERENCES public.profiles(id),
+    due_date DATE,
+    status execution_status DEFAULT 'pending',
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  );
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- ──────────────────────────────────────────────
--- Indexes
+-- Indexes (idempotent)
 -- ──────────────────────────────────────────────
-CREATE INDEX idx_decisions_team_id ON public.decisions(team_id);
-CREATE INDEX idx_decisions_status ON public.decisions(status);
-CREATE INDEX idx_decisions_created_at ON public.decisions(created_at DESC);
-CREATE INDEX idx_options_decision_id ON public.options(decision_id);
-CREATE INDEX idx_votes_decision_id ON public.votes(decision_id);
-CREATE INDEX idx_votes_user_id ON public.votes(user_id);
-CREATE INDEX idx_comments_decision_id ON public.comments(decision_id);
-CREATE INDEX idx_executions_decision_id ON public.executions(decision_id);
-CREATE INDEX idx_executions_assignee ON public.executions(assignee_id);
+DO $$ BEGIN
+  CREATE INDEX idx_decisions_team_id ON public.decisions(team_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_decisions_status ON public.decisions(status);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_decisions_created_at ON public.decisions(created_at DESC);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_options_decision_id ON public.options(decision_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_votes_decision_id ON public.votes(decision_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_votes_user_id ON public.votes(user_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_comments_decision_id ON public.comments(decision_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_executions_decision_id ON public.executions(decision_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX idx_executions_assignee ON public.executions(assignee_id);
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- ──────────────────────────────────────────────
 -- Row Level Security (RLS)
