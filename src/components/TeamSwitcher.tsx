@@ -5,7 +5,7 @@ import { ChevronDown, Plus, Users, Check, Settings } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '@/contexts/AuthContext'
 import { teamsAPI } from '@/lib/api/teams'
-import type { TeamMember } from '@/lib/api/teams'
+import type { TeamMembership } from '@/contexts/AuthContext'
 
 interface TeamSwitcherProps {
   onTeamChange?: (teamId: string) => void
@@ -31,7 +31,7 @@ export default function TeamSwitcher({ onTeamChange }: TeamSwitcherProps) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const handleTeamSelect = (team: TeamMember) => {
+  const handleTeamSelect = (team: TeamMembership) => {
     setCurrentTeam(team.teams.id)
     onTeamChange?.(team.teams.id)
     setIsOpen(false)

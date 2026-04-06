@@ -110,7 +110,7 @@ export function useRealtimeVotes({
             },
             async (payload) => {
               // 获取新投票的完整信息
-              const newVote = payload.new as Vote
+              const newVote = payload.new as Vote & { round: number }
 
               // 如果是当前轮次的新投票
               if (newVote.round === currentRound) {

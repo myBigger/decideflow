@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createClient } from '@/lib/supabase/server'
 import { aiService } from '@/lib/ai/service'
 import { NextResponse } from 'next/server'

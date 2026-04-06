@@ -21,7 +21,7 @@ interface User {
   created_at?: string
 }
 
-interface TeamMembership {
+export interface TeamMembership {
   role: 'owner' | 'admin' | 'member' | 'viewer'
   weight: number
   teams: {

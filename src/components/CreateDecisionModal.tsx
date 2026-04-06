@@ -15,7 +15,7 @@ interface CreateDecisionModalProps {
 
 const VOTE_TYPES: VoteType[] = ['simple', 'weighted', 'anonymous', 'two_round']
 
-export default function CreateDecisionModal({ onClose, onCreated }: CreateDecisionModalProps) {
+export default function CreateDecisionModal({ onClose, onCreated, teamId }: CreateDecisionModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [voteType, setVoteType] = useState<VoteType>('simple')
