@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react'
 import styles from '../auth.module.css'
-import { register } from '@/app/actions/auth'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function RegisterForm() {
   const router = useRouter()
+  const { signUp } = useAuth()
   const [isPending, startTransition] = useTransition()
 
   const [fullName, setFullName] = useState('')
@@ -22,12 +23,7 @@ export default function RegisterForm() {
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
 
-  // Password strength checker
-  const getPasswordStrength = (pwd: string): {
-    score: number
-    label: string
-    color: string
-  } => {
+  const getPasswordStrength = (pwd: string): { score: number; label: string; color: string } => {
     if (!pwd) return { score: 0, label: '', color: '' }
     let score = 0
     if (pwd.length >= 6) score++
@@ -35,7 +31,6 @@ export default function RegisterForm() {
     if (/[A-Z]/.test(pwd)) score++
     if (/[0-9]/.test(pwd)) score++
     if (/[^A-Za-z0-9]/.test(pwd)) score++
-
     if (score <= 1) return { score, label: '弱', color: '#ef4444' }
     if (score <= 2) return { score, label: '中等', color: '#f59e0b' }
     if (score <= 3) return { score, label: '良好', color: '#0ea5e9' }
@@ -44,7 +39,6 @@ export default function RegisterForm() {
 
   const strength = getPasswordStrength(password)
 
-  // Validation
   const validate = (): string | null => {
     if (!fullName.trim()) return '请输入你的姓名'
     if (fullName.trim().length < 2) return '姓名至少需要2个字符'
@@ -66,17 +60,17 @@ export default function RegisterForm() {
     setError(null)
     setSuccess(null)
 
-    const formData = new FormData()
-    formData.set('email', email.trim())
-    formData.set('password', password)
-    formData.set('fullName', fullName.trim())
-
     startTransition(async () => {
-      const result = await register(formData)
-      if (result && 'error' in result) {
-        setError((result.error as string | undefined) ?? null)
-      } else if (result && 'success' in result) {
-        // Server Action 会 redirect，这里实际上不会走到
+      // 直接用浏览器端 Supabase auth
+      const result = await signUp(email.trim(), password, fullName.trim())
+      if (result.error) {
+        setError(result.error)
+      } else {
+        setSuccess('注册成功！请查收验证邮件，然后登录')
+        // 注册成功后跳转到登录页
+        setTimeout(() => {
+          router.push('/auth/login?registered=1')
+        }, 1500)
       }
     })
   }
@@ -245,7 +239,6 @@ export default function RegisterForm() {
                 </button>
               </div>
 
-              {/* Password Strength Indicator */}
               {password && (
                 <div style={{ marginTop: '8px' }}>
                   <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
@@ -295,7 +288,7 @@ export default function RegisterForm() {
 
           <div className={styles['form-footer']}>
             <p className={styles['form-footer-text']}>
-              登录即表示你同意我们的{' '}
+              注册即表示你同意我们的{' '}
               <a href="#">服务条款</a> 和{' '}
               <a href="#">隐私政策</a>
             </p>

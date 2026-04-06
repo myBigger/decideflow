@@ -5,12 +5,12 @@ import Link from 'next/link'
 import { Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import styles from '../auth.module.css'
-import { login } from '@/app/actions/auth'
-import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { signInWithPassword } = useAuth()
   const [isPending, startTransition] = useTransition()
 
   const [email, setEmail] = useState('')
@@ -18,8 +18,8 @@ export default function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 注册成功后从 URL 参数读取提示
   const justRegistered = searchParams.get('registered') === '1'
+  const redirectTo = searchParams.get('redirect') || '/dashboard'
 
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
@@ -39,25 +39,14 @@ export default function LoginForm() {
       return
     }
 
-    const formData = new FormData()
-    formData.set('email', email.trim())
-    formData.set('password', password)
-
     startTransition(async () => {
-      const result = await login(formData)
-      if (result && 'error' in result) {
-        setError((result.error as string | undefined) ?? '登录失败')
-      } else if (result && 'success' in result && result.session) {
-        // 关键：显式将 session 写入浏览器 Supabase client（绕过 cookie 时序问题）
-        const browserSupabase = createClient()
-        await browserSupabase.auth.setSession({
-          access_token: result.session!.access_token,
-          refresh_token: result.session!.refresh_token,
-        })
-        // 登录成功后读取 redirect 参数跳转
-        const redirectTo = searchParams.get('redirect') || '/dashboard'
+      // 直接调用浏览器端 Supabase auth — 不走 Server Action，彻底绕过 cookie 问题
+      const result = await signInWithPassword(email.trim(), password)
+      if (result.error) {
+        setError(result.error)
+      } else {
+        // 登录成功，跳转到目标页面
         router.push(redirectTo)
-        // 强制刷新让 AuthContext 重新初始化
         router.refresh()
       }
     })
@@ -142,17 +131,17 @@ export default function LoginForm() {
             </p>
           </div>
 
-          {error && (
-            <div className={styles['form-error']}>
-              <AlertCircle size={16} className={styles['form-error-icon']} />
-              <span className={styles['form-error-text']}>{error}</span>
-            </div>
-          )}
-
           {justRegistered && (
             <div className={styles['form-success']}>
               <CheckCircle2 size={16} className={styles['form-success-icon']} />
               <span className={styles['form-success-text']}>注册成功！请查收验证邮件，然后登录</span>
+            </div>
+          )}
+
+          {error && (
+            <div className={styles['form-error']}>
+              <AlertCircle size={16} className={styles['form-error-icon']} />
+              <span className={styles['form-error-text']}>{error}</span>
             </div>
           )}
 

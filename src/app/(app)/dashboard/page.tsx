@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const [selectedDecision, setSelectedDecision] = useState<Decision | null>(null)
   const [sidebarFilter, setSidebarFilter] = useState<'all' | 'voting' | 'passed' | 'draft'>('all')
 
-  // 认证保护
+  // 认证保护：等待加载完成后重定向
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push('/auth/login')

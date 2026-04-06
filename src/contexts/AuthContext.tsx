@@ -6,20 +6,21 @@ import {
   useEffect,
   useState,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react'
-import { getSession, logout as serverLogout } from '@/app/actions/auth'
+import { createClient } from '@/lib/supabase/client'
+import type { User, Session } from '@supabase/supabase-js'
 
 // ──────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────
 
-interface User {
+interface AuthUser {
   id: string
   email: string
   full_name: string | null
   avatar_url: string | null
-  created_at?: string
 }
 
 export interface TeamMembership {
@@ -34,98 +35,163 @@ export interface TeamMembership {
 }
 
 interface AuthContextValue {
-  // State
-  user: User | null
+  user: AuthUser | null
+  session: Session | null
   teams: TeamMembership[]
   isLoading: boolean
   isAuthenticated: boolean
   currentTeam: TeamMembership | null
-
-  // Actions
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   setCurrentTeam: (teamId: string) => void
+  signInWithPassword: (email: string, password: string) => Promise<{ error?: string }>
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string }>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 // ──────────────────────────────────────────────
-// Provider
+// Provider — browser-side only via onAuthStateChange
 // ──────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [teams, setTeams] = useState<TeamMembership[]>([])
   const [currentTeam, setCurrentTeamState] = useState<TeamMembership | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // 初始化：检查当前登录状态（使用 Server Action 读取 cookies）
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const session = await getSession()
+  const supabase = useRef(createClient()).current
+  const teamsFetched = useRef(false)
 
-        if (session.authenticated && session.user) {
-          setUser(session.user as User)
-          setTeams((session.teams || []) as TeamMembership[])
-          // 自动选择第一个团队
-          if (session.teams && session.teams.length > 0) {
-            setCurrentTeamState(session.teams[0] as TeamMembership)
+  // 获取用户对应的团队信息
+  const fetchTeams = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('team_members')
+      .select(`
+        role,
+        weight,
+        teams (
+          id,
+          name,
+          slug,
+          avatar_url
+        )
+      `)
+      .eq('user_id', userId)
+
+    if (!error && data) {
+      return data as unknown as TeamMembership[]
+    }
+    return []
+  }, [supabase])
+
+  // 用户信息映射
+  const mapUser = useCallback((authUser: User | null): AuthUser | null => {
+    if (!authUser) return null
+    return {
+      id: authUser.id,
+      email: authUser.email ?? '',
+      full_name: authUser.user_metadata?.full_name ?? null,
+      avatar_url: authUser.user_metadata?.avatar_url ?? null,
+    }
+  }, [])
+
+  // 初始化：监听浏览器端 Supabase auth 状态
+  useEffect(() => {
+    // 立即获取初始 session（从 localStorage/cookie 中恢复）
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (initialSession) {
+        setSession(initialSession)
+        setUser(mapUser(initialSession.user))
+        // 异步获取团队信息
+        fetchTeams(initialSession.user.id).then(teamsData => {
+          setTeams(teamsData)
+          if (teamsData.length > 0) {
+            setCurrentTeamState(teamsData[0])
+          }
+        }).catch(() => {})
+      }
+      setIsLoading(false)
+    }).catch(() => {
+      setIsLoading(false)
+    })
+
+    // 监听后续 auth 变化
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSession(session)
+        if (session) {
+          setUser(mapUser(session.user))
+          if (!teamsFetched.current) {
+            teamsFetched.current = true
+            const teamsData = await fetchTeams(session.user.id)
+            setTeams(teamsData)
+            if (teamsData.length > 0) {
+              setCurrentTeamState(teamsData[0])
+            }
           }
         } else {
           setUser(null)
           setTeams([])
+          setCurrentTeamState(null)
         }
-      } catch {
-        setUser(null)
-        setTeams([])
-      } finally {
-        setIsLoading(false)
       }
+    )
+
+    return () => {
+      subscription.unsubscribe()
     }
+  }, [supabase, fetchTeams, mapUser])
 
-    initAuth()
-  }, [])
+  // 登录（浏览器端直接调用，跳过 Server Action 的 cookie 问题）
+  const signInWithPassword = useCallback(
+    async (email: string, password: string): Promise<{ error?: string }> => {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) return { error: error.message }
+      return {}
+    },
+    [supabase]
+  )
 
-  // 登出（使用 Server Action）
+  // 注册
+  const signUp = useCallback(
+    async (email: string, password: string, fullName: string): Promise<{ error?: string }> => {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } },
+      })
+      if (error) return { error: error.message }
+      return {}
+    },
+    [supabase]
+  )
+
+  // 登出
   const logout = useCallback(async () => {
-    try {
-      await serverLogout()
-    } catch {
-      // 即使失败也清除本地状态
-      setUser(null)
-      setTeams([])
-      setCurrentTeamState(null)
-    }
-  }, [])
+    await supabase.auth.signOut()
+  }, [supabase])
 
   // 刷新用户信息
   const refreshUser = useCallback(async () => {
-    try {
-      const session = await getSession()
-      if (session.authenticated && session.user) {
-        setUser(session.user as User)
-        setTeams((session.teams || []) as TeamMembership[])
-      } else {
-        setUser(null)
-        setTeams([])
-        setCurrentTeamState(null)
-      }
-    } catch {
-      // ignore
+    const { data: { user: currentUser } } = await supabase.auth.getUser()
+    if (currentUser) {
+      setUser(mapUser(currentUser))
+      const teamsData = await fetchTeams(currentUser.id)
+      setTeams(teamsData)
     }
-  }, [])
+  }, [supabase, mapUser, fetchTeams])
 
   // 切换当前团队
   const setCurrentTeam = useCallback((teamId: string) => {
     const team = teams.find(t => t.teams.id === teamId)
-    if (team) {
-      setCurrentTeamState(team)
-    }
+    if (team) setCurrentTeamState(team)
   }, [teams])
 
   const value: AuthContextValue = {
     user,
+    session,
     teams,
     isLoading,
     isAuthenticated: !!user,
@@ -133,6 +199,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     refreshUser,
     setCurrentTeam,
+    signInWithPassword,
+    signUp,
   }
 
   return (
