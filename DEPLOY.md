@@ -1,6 +1,6 @@
 # 🚀 Dec ideFlow 部署指南
 
-> 本指南将帮助你把 Dec ideFlow 从本地开发环境部署到 Vercel 生产环境，并连接 Supabase 数据库。
+> 本指南将帮助你把 DecideFlow 从本地开发环境部署到 Vercel 生产环境，并连接 Supabase 数据库。
 
 ---
 

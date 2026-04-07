@@ -10,6 +10,8 @@ import DecisionDetail from '@/components/DecisionDetail'
 
 interface DashboardHomeProps {
   teamId?: string
+  sidebarFilter?: string   // 来自侧边栏的筛选，同步内部 filter 状态
+  onFilterChange?: (filter: string) => void  // 内部 Tab 切换时同步回父组件
   onSelectDecision: (d: Decision) => void
   onCreateClick: () => void
   votingCount?: number
@@ -20,6 +22,8 @@ interface DashboardHomeProps {
 
 export default function DashboardHome({
   teamId,
+  sidebarFilter,
+  onFilterChange,
   onSelectDecision,
   onCreateClick,
   votingCount,
@@ -30,7 +34,7 @@ export default function DashboardHome({
   const [decisions, setDecisions] = useState<DecisionWithMeta[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<string>('all')
+  const [filter, setFilter] = useState<string>(sidebarFilter ?? 'all')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -59,10 +63,16 @@ export default function DashboardHome({
   }, [teamId, page])
 
   // 切换团队时重置筛选条件到"全部"
+  // 侧边栏切换筛选时同步内部 filter
   useEffect(() => {
-    setFilter('all')
-    setPage(1)
-  }, [teamId])
+    if (sidebarFilter !== undefined) {
+      setFilter(sidebarFilter)
+      setPage(1)
+    } else {
+      setFilter('all')
+      setPage(1)
+    }
+  }, [teamId, sidebarFilter])
 
   useEffect(() => {
     fetchDecisions(filter)
@@ -156,7 +166,7 @@ export default function DashboardHome({
         ].map(tab => (
           <button
             key={tab.key}
-            onClick={() => { setFilter(tab.key); setPage(1) }}
+            onClick={() => { setFilter(tab.key); setPage(1); onFilterChange?.(tab.key) }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               filter === tab.key
                 ? 'bg-primary-50 text-primary-700 shadow-sm'

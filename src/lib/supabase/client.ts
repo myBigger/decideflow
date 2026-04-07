@@ -98,8 +98,12 @@ type Database = {
 // ──────────────────────────────────────────────
 
 export function createClient() {
-  return createBrowserClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  console.log('[Supabase Client] URL:', url)
+  console.log('[Supabase Client] Key:', key ? `${key.slice(0, 10)}...` : 'MISSING')
+  if (!url || !key) {
+    throw new Error('Supabase URL or Key is missing!')
+  }
+  return createBrowserClient<Database>(url, key)
 }

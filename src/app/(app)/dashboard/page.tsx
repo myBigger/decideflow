@@ -216,6 +216,8 @@ export default function DashboardPage() {
         <main className="flex-1 min-w-0">
           <DashboardHome
             teamId={currentTeam?.teams?.id}
+            sidebarFilter={sidebarFilter}
+            onFilterChange={(f) => setSidebarFilter(f as typeof sidebarFilter)}
             onSelectDecision={setSelectedDecision}
             onCreateClick={() => setShowCreateModal(true)}
             votingCount={teamStats.voting}

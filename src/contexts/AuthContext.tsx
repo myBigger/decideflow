@@ -101,24 +101,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true  // 防止组件卸载后仍更新状态
 
-    // 立即获取初始 session（从 localStorage/cookie 中恢复）
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+    // 给 getSession 加 5 秒超时，避免 Supabase 连不上时页面永久卡住
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+
+    Promise.race([
+      supabase.auth.getSession(),
+      timeout,
+    ]).then((result: unknown) => {
       if (!mounted) return
-      if (initialSession) {
-        setSession(initialSession)
-        setUser(mapUser(initialSession.user))
-        // 异步获取团队信息
-        fetchTeams(initialSession.user.id).then(teamsData => {
-          if (!mounted) return
-          setTeams(teamsData)
-          teamsFetched.current = true
-          if (teamsData.length > 0) {
-            setCurrentTeamState(teamsData[0])
-          }
-        }).catch(() => {
-          if (!mounted) return
-          teamsFetched.current = true
-        })
+      const sessionResult = result as { data: { session: Session | null } } | null
+      if (sessionResult && sessionResult.data?.session) {
+        const initialSession = sessionResult.data.session
+        if (initialSession) {
+          setSession(initialSession)
+          setUser(mapUser(initialSession.user))
+          // 异步获取团队信息
+          fetchTeams(initialSession.user.id).then(teamsData => {
+            if (!mounted) return
+            setTeams(teamsData)
+            teamsFetched.current = true
+            if (teamsData.length > 0) {
+              setCurrentTeamState(teamsData[0])
+            }
+          }).catch(() => {
+            if (!mounted) return
+            teamsFetched.current = true
+          })
+        }
       }
       setIsLoading(false)
     }).catch(() => {

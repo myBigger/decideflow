@@ -1,14 +1,16 @@
 -- ============================================================
--- DecideFlow — Supabase Database Migration
--- Run this in the Supabase SQL Editor
+-- DecideFlow — Supabase Database Migrations
+--
+-- Usage: Run this file to apply incremental changes to an
+--        EXISTING database. Fully idempotent — safe to re-run.
+--
+-- Run in: Supabase Dashboard → SQL Editor
 -- ============================================================
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- ──────────────────────────────────────────────
+-- Enums (skip if already exists)
+-- ──────────────────────────────────────────────
 
--- ──────────────────────────────────────────────
--- Enums (idempotent — skip if already exists)
--- ──────────────────────────────────────────────
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vote_type') THEN
@@ -38,10 +40,9 @@ BEGIN
 END $$;
 
 -- ──────────────────────────────────────────────
--- Tables
+-- Tables (skip if already exists)
 -- ──────────────────────────────────────────────
 
--- 1. 用户资料 (extends auth.users)
 DO $$ BEGIN
   CREATE TABLE public.profiles (
     id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
@@ -53,7 +54,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 2. 团队
 DO $$ BEGIN
   CREATE TABLE public.teams (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -67,7 +67,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 3. 团队成员
 DO $$ BEGIN
   CREATE TABLE public.team_members (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -82,7 +81,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 4. 决策
 DO $$ BEGIN
   CREATE TABLE public.decisions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -105,7 +103,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 5. 投票选项
 DO $$ BEGIN
   CREATE TABLE public.options (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -118,7 +115,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 6. 投票记录
 DO $$ BEGIN
   CREATE TABLE public.votes (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -134,7 +130,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 7. 评论
 DO $$ BEGIN
   CREATE TABLE public.comments (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -148,7 +143,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 8. 执行追踪
 DO $$ BEGIN
   CREATE TABLE public.executions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -165,55 +159,21 @@ EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
 -- ──────────────────────────────────────────────
--- Indexes (idempotent)
+-- Indexes (skip if already exists)
 -- ──────────────────────────────────────────────
-DO $$ BEGIN
-  CREATE INDEX idx_decisions_team_id ON public.decisions(team_id);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
 
-DO $$ BEGIN
-  CREATE INDEX idx_decisions_status ON public.decisions(status);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  CREATE INDEX idx_decisions_created_at ON public.decisions(created_at DESC);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  CREATE INDEX idx_options_decision_id ON public.options(decision_id);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  CREATE INDEX idx_votes_decision_id ON public.votes(decision_id);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  CREATE INDEX idx_votes_user_id ON public.votes(user_id);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  CREATE INDEX idx_comments_decision_id ON public.comments(decision_id);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  CREATE INDEX idx_executions_decision_id ON public.executions(decision_id);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-  CREATE INDEX idx_executions_assignee ON public.executions(assignee_id);
-EXCEPTION WHEN duplicate_object THEN null;
-END $$;
+DO $$ BEGIN CREATE INDEX idx_decisions_team_id ON public.decisions(team_id); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_decisions_status ON public.decisions(status); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_decisions_created_at ON public.decisions(created_at DESC); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_options_decision_id ON public.options(decision_id); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_votes_decision_id ON public.votes(decision_id); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_votes_user_id ON public.votes(user_id); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_comments_decision_id ON public.comments(decision_id); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_executions_decision_id ON public.executions(decision_id); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE INDEX idx_executions_assignee ON public.executions(assignee_id); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ──────────────────────────────────────────────
--- Row Level Security (RLS)
+-- Row Level Security (RLS) — enable only
 -- ──────────────────────────────────────────────
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -226,17 +186,19 @@ ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.executions ENABLE ROW LEVEL SECURITY;
 
 -- ──────────────────────────────────────────────
--- RLS Policies (idempotent — skip if already exists)
+-- RLS Policies (skip if already exists)
 -- ──────────────────────────────────────────────
 
 -- Profiles
 DO $$ BEGIN
-  CREATE POLICY "Profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
+  CREATE POLICY "Profiles are viewable by everyone" ON public.profiles
+    FOR SELECT USING (true);
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
 DO $$ BEGIN
-  CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+  CREATE POLICY "Users can update own profile" ON public.profiles
+    FOR UPDATE USING (auth.uid() = id);
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
@@ -244,7 +206,10 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "Team members can view team" ON public.teams
     FOR SELECT USING (
-      EXISTS (SELECT 1 FROM public.team_members WHERE team_id = teams.id AND user_id = auth.uid())
+      EXISTS (
+        SELECT 1 FROM public.team_members
+        WHERE team_id = teams.id AND user_id = auth.uid()
+      )
     );
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
@@ -253,7 +218,10 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "Team members visible to members" ON public.team_members
     FOR SELECT USING (
-      EXISTS (SELECT 1 FROM public.team_members tm WHERE tm.team_id = team_members.team_id AND tm.user_id = auth.uid())
+      EXISTS (
+        SELECT 1 FROM public.team_members tm
+        WHERE tm.team_id = team_members.team_id AND tm.user_id = auth.uid()
+      )
     );
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
@@ -262,7 +230,10 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "Team members can view decisions" ON public.decisions
     FOR SELECT USING (
-      EXISTS (SELECT 1 FROM public.team_members WHERE team_id = decisions.team_id AND user_id = auth.uid())
+      EXISTS (
+        SELECT 1 FROM public.team_members
+        WHERE team_id = decisions.team_id AND user_id = auth.uid()
+      )
     );
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
@@ -403,57 +374,51 @@ BEGIN
 END;
 $$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_decisions_updated_at') THEN
-    CREATE TRIGGER update_decisions_updated_at BEFORE UPDATE ON public.decisions
-      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
-  END IF;
+DO $$ BEGIN
+  CREATE TRIGGER update_decisions_updated_at
+    BEFORE UPDATE ON public.decisions
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_executions_updated_at') THEN
-    CREATE TRIGGER update_executions_updated_at BEFORE UPDATE ON public.executions
-      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
-  END IF;
+DO $$ BEGIN
+  CREATE TRIGGER update_executions_updated_at
+    BEFORE UPDATE ON public.executions
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_teams_updated_at') THEN
-    CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON public.teams
-      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
-  END IF;
+DO $$ BEGIN
+  CREATE TRIGGER update_teams_updated_at
+    BEFORE UPDATE ON public.teams
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_team_members_updated_at') THEN
-    CREATE TRIGGER update_team_members_updated_at BEFORE UPDATE ON public.team_members
-      FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
-  END IF;
+DO $$ BEGIN
+  CREATE TRIGGER update_team_members_updated_at
+    BEFORE UPDATE ON public.team_members
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- Auto-close voting when time expires (optional, uses pg_cron or can be called manually)
---
--- NOTE: This function only handles time-based expiry. Vote result calculation (passed/rejected)
--- must be done by the vote route when a user votes and the threshold is met.
--- This function marks expired votings as 'rejected' if they haven't been closed yet.
+-- Auto-close voting when time expires
 CREATE OR REPLACE FUNCTION public.close_expired_votings()
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
   UPDATE public.decisions
-  SET
-    status = 'rejected',
-    final_result = 'rejected'
+  SET status = 'rejected',
+      final_result = 'rejected'
   WHERE status = 'voting'
     AND voting_end IS NOT NULL
     AND voting_end < NOW();
 END;
 $$;
 
--- Grant usage
+-- ──────────────────────────────────────────────
+-- Grants
+-- ──────────────────────────────────────────────
+
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
