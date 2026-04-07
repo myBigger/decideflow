@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/auth/me
  * 获取当前登录用户信息
