@@ -45,9 +45,24 @@ export default function LoginForm() {
       if (result.error) {
         setError(result.error)
       } else {
-        // 登录成功，跳转到目标页面
+        // 登录成功，等 Supabase session 稳定后再跳转
+        // 原因：middleware 的 getUser() 在 Edge Runtime 读取 cookie 有延迟
+        // 直接调用 createBrowserClient 而不经过 AuthContext 的 ref，确保拿到最新 session
+        const { createClient } = await import('@/lib/supabase/client')
+        const supabase = createClient()
+
+        // 轮询等待 session 确认（最多 3 秒）
+        for (let i = 0; i < 15; i++) {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session) {
+            router.push(redirectTo)
+            return
+          }
+          await new Promise(r => setTimeout(r, 200))
+        }
+
+        // 超时兜底：仍然跳转，让 dashboard 自己检查 auth
         router.push(redirectTo)
-        router.refresh()
       }
     })
   }

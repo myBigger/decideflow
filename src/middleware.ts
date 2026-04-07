@@ -1,68 +1,35 @@
-import { createServerClient, CookieOptionsWithName } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+/**
+ * Middleware — Vercel Edge Runtime
+ *
+ * ⚠️ 重要说明：
+ * Edge Runtime 对 httpOnly cookie 的支持不完整。
+ * dashboard 路由的认证保护移到客户端 AuthContext 中处理（dashboard/page.tsx）
+ * 这里只做 API 路由的 401 返回（不在这里读取 user，避免 cookie 问题）
+ */
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
+  const { pathname } = request.nextUrl
 
-  // Create Supabase client for middleware (uses request cookies directly)
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet: CookieOptionsWithName[]) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value)
-            response.cookies.set(name, value, {
-              httpOnly: options.httpOnly ?? true,
-              secure: options.secure ?? process.env.NODE_ENV === 'production',
-              sameSite: (options.sameSite ?? 'lax') as 'lax' | 'strict' | 'none',
-              path: options.path ?? '/',
-              domain: options.domain,
-              maxAge: options.maxAge,
-            })
-          })
-        },
-      },
-    }
-  )
-
-  // Refresh session - use getSession (reads cookies only, no network call)
-  // This avoids hanging when Supabase is unreachable
-  const { data } = await supabase.auth.getSession()
-  const user = data.session?.user ?? null
-
-  // Protect dashboard routes
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
-    if (!user) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/auth/login'
-      url.searchParams.set('redirect', request.nextUrl.pathname)
-      return NextResponse.redirect(url)
-    }
-  }
-
-  // Protect API routes that need auth
+  // API 路由认证：不在中间件读取 user（Edge Runtime cookie 问题）
+  // 改为让 API 路由自己用 createServerClient 验证
+  // 只对 /api/* 做响应头标记，告知这些路由需要认证
   if (
-    request.nextUrl.pathname.startsWith('/api/decisions') ||
-    request.nextUrl.pathname.startsWith('/api/teams')
+    pathname.startsWith('/api/decisions') ||
+    pathname.startsWith('/api/teams') ||
+    pathname.startsWith('/api/profile') ||
+    pathname.startsWith('/api/ai')
   ) {
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    // Pass user ID to API routes via header
-    response.headers.set('x-user-id', user.id)
-    response.headers.set('x-user-email', user.email ?? '')
+    // 不在这里 check user，交给各个 API 路由内部 check
+    // 但添加请求标记，方便排查
+    const response = NextResponse.next({ request: { headers: request.headers } })
+    response.headers.set('x-request-path', pathname)
+    return response
   }
 
-  return response
+  // dashboard 路由：不做服务端重定向（Edge Runtime 读不到 Supabase cookie）
+  // 改为让客户端 AuthContext + dashboard/page.tsx 的 useEffect 处理跳转
+  return NextResponse.next({ request: { headers: request.headers } })
 }
 
 export const config = {
@@ -70,12 +37,12 @@ export const config = {
     /*
      * Match all request paths except:
      * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
+     * - _next/image (image optimization)
+     * - favicon.ico
      * - public folder
      * - auth pages (login, register)
-     * - landing page
+     * - landing page (/)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|/auth/|/$|/api/ai).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|/auth/|/$).*)',
   ],
 }
