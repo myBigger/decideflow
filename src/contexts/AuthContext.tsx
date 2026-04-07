@@ -101,16 +101,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true  // 防止组件卸载后仍更新状态
 
-    // 直接调用 getSession，不加人为超时
-    // Supabase 浏览器客户端内置重试逻辑，不需要手动 timeout
-    supabase.auth.getSession().then((result) => {
+    // 先通过 onAuthStateChange 快速获取初始状态（如果 cookie 中有 session）
+    // getUser() 始终请求服务器，最可靠，但稍慢，所以用 10s 超时兜底
+    const TIMEOUT_MS = 10000
+
+    const init = async () => {
+      // 用 getUser 而不是 getSession —— getUser 始终验证服务器端 session，更可靠
+      const getUserPromise = supabase.auth.getUser()
+
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), TIMEOUT_MS))
+
+      let session = null
+      try {
+        const result = await Promise.race([getUserPromise, timeout])
+        if (result?.data?.user) {
+          session = result.data
+        }
+      } catch {
+        // getUser 失败，不影响 — cookie 中无 session
+      }
+
       if (!mounted) return
-      const session = result.data.session
-      if (session) {
-        setSession(session)
-        setUser(mapUser(session.user))
-        // 异步获取团队信息
-        fetchTeams(session.user.id).then(teamsData => {
+
+      if (session?.user) {
+        const user = mapUser(session.user)
+        setUser(user)
+        // 从 cookie 中恢复 session（getUser 不返回完整 session）
+        // 尝试从 cookie 读 session
+        try {
+          const { data: sessionData } = await supabase.auth.getSession()
+          if (sessionData?.session) {
+            setSession(sessionData.session)
+          }
+        } catch { /* ignore */ }
+
+        fetchTeams(user.id).then(teamsData => {
           if (!mounted) return
           setTeams(teamsData)
           teamsFetched.current = true
@@ -123,10 +148,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
       }
       setIsLoading(false)
-    }).catch(() => {
-      if (!mounted) return
-      setIsLoading(false)
-    })
+    }
+
+    init()
 
     // 监听后续 auth 变化
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
