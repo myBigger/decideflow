@@ -36,7 +36,8 @@ export async function middleware(request: NextRequest) {
 
   // Refresh session - use getSession (reads cookies only, no network call)
   // This avoids hanging when Supabase is unreachable
-  const { data: { user } } = await supabase.auth.getSession()
+  const { data } = await supabase.auth.getSession()
+  const user = data.session?.user ?? null
 
   // Protect dashboard routes
   if (request.nextUrl.pathname.startsWith('/dashboard')) {
