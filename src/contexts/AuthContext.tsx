@@ -99,50 +99,110 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 初始化：监听浏览器端 Supabase auth 状态
   useEffect(() => {
-    let mounted = true  // 防止组件卸载后仍更新状态
+    let mounted = true
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
 
-    // 监听后续 auth 变化 — onAuthStateChange 会在 cookie 中有 session 时立即触发，
-    // 不需要任何网络请求，浏览器直接读 cookie 即可
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return
-        setSession(session)
-        if (session) {
-          setUser(mapUser(session.user))
+    const init = async () => {
+      // 1. 先设置 onAuthStateChange 监听未来变化
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if (!mounted) return
+          if (fallbackTimer) {
+            clearTimeout(fallbackTimer)
+            fallbackTimer = null
+          }
+          setSession(session)
+          if (session) {
+            setUser(mapUser(session.user))
+            if (!teamsFetched.current) {
+              teamsFetched.current = true
+              try {
+                const teamsData = await fetchTeams(session.user.id)
+                if (!mounted) return
+                setTeams(teamsData)
+                if (teamsData.length > 0) {
+                  setCurrentTeamState(teamsData[0])
+                }
+              } catch {
+                // fetch 失败不影响 auth 状态
+              }
+            }
+          } else {
+            setUser(null)
+            setTeams([])
+            setCurrentTeamState(null)
+            teamsFetched.current = false
+          }
+          setIsLoading(false)
+        }
+      )
+
+      // 2. 同时用 getSession() 强制从 cookie 读取初始 session
+      //    getSession() 在浏览器端优先读本地 cookie，不一定发网络请求
+      //    5 秒超时兜底，防止因代理阻断而永久挂起
+      const TIMEOUT_MS = 5000
+      let sessionResolved = false
+
+      try {
+        const sessionResult = await new Promise<
+          { data: { session: Session | null } }
+        >((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
+          supabase.auth.getSession().then(
+            (result) => {
+              clearTimeout(timer)
+              resolve(result)
+            },
+            (err) => {
+              clearTimeout(timer)
+              reject(err)
+            }
+          )
+        })
+
+        if (!mounted || sessionResolved) return
+
+        if (sessionResult.data.session) {
+          // getSession 找到了 session，直接设置，跳过等待 onAuthStateChange
+          setSession(sessionResult.data.session)
+          setUser(mapUser(sessionResult.data.session.user))
           if (!teamsFetched.current) {
             teamsFetched.current = true
-            fetchTeams(session.user.id).then(teamsData => {
+            try {
+              const teamsData = await fetchTeams(sessionResult.data.session.user.id)
               if (!mounted) return
               setTeams(teamsData)
               if (teamsData.length > 0) {
                 setCurrentTeamState(teamsData[0])
               }
-            }).catch(() => {
-              if (!mounted) return
-              // fetch 失败不影响 auth 状态
-            })
+            } catch { /* ignore */ }
           }
         } else {
-          setUser(null)
-          setTeams([])
-          setCurrentTeamState(null)
-          teamsFetched.current = false
+          // cookie 中无 session，等待 onAuthStateChange（登录页面跳转后触发）
         }
+        sessionResolved = true
         setIsLoading(false)
+      } catch {
+        if (!mounted) return
+        if (!sessionResolved) {
+          // 超时或出错：等待 onAuthStateChange，最长等 8 秒
+          fallbackTimer = setTimeout(() => {
+            if (!mounted) return
+            setIsLoading(false)
+          }, 8000)
+        }
       }
-    )
 
-    // 兜底：如果 onAuthStateChange 因浏览器代理/网络问题没有触发，
-    // 3 秒后强制结束加载状态（允许用户看到未登录状态，而不是永久转圈）
-    const fallbackTimer = setTimeout(() => {
-      if (!mounted) return
-      setIsLoading(false)
-    }, 3000)
+      if (!mounted) {
+        subscription.unsubscribe()
+      }
+    }
+
+    init()
 
     return () => {
       mounted = false
-      clearTimeout(fallbackTimer)
-      subscription.unsubscribe()
+      if (fallbackTimer) clearTimeout(fallbackTimer)
     }
   }, [supabase, fetchTeams, mapUser])
 
