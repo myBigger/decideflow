@@ -2,6 +2,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 /**
  * GET /api/profile
  * 获取当前用户档案

@@ -2,6 +2,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 /**
  * GET /api/decisions
  * 获取决策列表（支持筛选和分页）

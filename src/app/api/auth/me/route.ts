@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 /**
  * GET /api/auth/me

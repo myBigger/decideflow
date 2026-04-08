@@ -2,6 +2,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 /**
  * GET /api/decisions/[id]/executions
  * 获取决策的执行任务列表

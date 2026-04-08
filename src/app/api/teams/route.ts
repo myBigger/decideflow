@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { generateSlug } from '@/lib/utils'
 
+export const runtime = 'nodejs'
+
 /**
  * GET /api/teams
  * 获取当前用户所属的所有团队

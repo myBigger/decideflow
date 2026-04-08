@@ -4,6 +4,8 @@
 // All queries use explicit field access; runtime behavior is correct.
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+
+export const runtime = 'nodejs'
 import { calculateVotingResults } from '@/lib/vote-engine'
 import type { VoteType } from '@/types/database'
 

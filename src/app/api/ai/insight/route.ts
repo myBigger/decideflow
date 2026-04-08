@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { aiService } from '@/lib/ai/service'
 import { NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 /**
  * POST /api/ai/insight
  * 生成 AI 决策洞察

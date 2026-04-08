@@ -2,6 +2,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
 /**
  * POST /api/auth/login
  * 用户登录
